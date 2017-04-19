@@ -59,7 +59,7 @@ class OneSkinMesh(object):
                 self.vertexArray,
                 len(self.morphList))
 
-    def build(self, node):
+    def build(self, scene, node):
         ############################################################
         # search armature modifier
         ############################################################
@@ -73,15 +73,15 @@ class OneSkinMesh(object):
                             armatureObj.name)
 
         if node.o.type.upper()=='MESH':
-            self.addMesh(node.o)
+            self.addMesh(scene, node.o)
 
         for child in node.children:
-            self.build(child)
+            self.build(scene, child)
 
-    def addMesh(self, obj):
+    def addMesh(self, scene, obj):
         if not bl.object.isVisible(obj):
             return
-        self.__mesh(obj)
+        self.__mesh(scene, obj)
         self.__rigidbody(obj)
         self.__constraint(obj)
 
@@ -333,16 +333,16 @@ class OneSkinMesh(object):
                 weightMap[v[0].index][1]
                 )
 
-    def __mesh(self, obj):
+    def __mesh(self, scene, obj):
         if bl.RIGID_SHAPE_TYPE in obj:
             return
         if bl.CONSTRAINT_A in obj:
             return
 
-        bl.message("export: %s" % obj.name)
+        #bl.message("export: %s" % obj.name)
 
         # メッシュのコピーを生成してオブジェクトの行列を適用する
-        copyMesh, copyObj=bl.object.duplicate(obj)
+        copyMesh, copyObj=bl.object.duplicate(scene, obj)
         copyObj.name="tmp_object"
         if len(copyMesh.vertices)>0:
             # apply transform
@@ -372,7 +372,7 @@ class OneSkinMesh(object):
             self.__processFaces(obj.name, copyMesh, weightMap, secondWeightMap)
             self.__weights(copyObj, copyMesh, obj.name)
             self.__skin(copyObj, obj.name)
-        bl.object.delete(copyObj)
+        bl.object.delete(scene, copyObj)
 
     def createEmptyBasicSkin(self):
         self.__getOrCreateMorph('base', 0)

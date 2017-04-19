@@ -17,19 +17,6 @@ else:
     INTERNAL_ENCODING=FS_ENCODING
 
 
-SCENE=None
-def initialize(name, scene):
-    global SCENE
-    SCENE=scene
-    progress_start(name)
-
-def finalize():
-    scene.update(SCENE)
-    progress_finish()
-
-def message(msg):
-    print(msg)
-
 def enterEditMode():
     bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
@@ -61,88 +48,25 @@ class Writer(object):
         self.io.close()
 
 
-progressBar=None
-class ProgressBar(object):
-    '''
-    progress bar wrapper
-    '''
-    def __init__(self, base):
-        print("#### %s ####" % base)
-        self.base=base
-        self.start=time.time() 
-        self.set('<start>', 0)
-
-    def advance(self, message, progress):
-        self.progress+=float(progress)
-        self._print(message)
-
-    def set(self, message, progress):
-        self.progress=float(progress)
-        self._print(message)
-
-    def _print(self, message):
-        print(message)
-        message="%s: %s" % (self.base, message)
-        #Blender.Window.DrawProgressBar(self.progress, message)
-
-    def finish(self):
-        self.progress=1.0
-        message='finished in %.2f sec' % (time.time()-self.start)
-        self.set(message, 1.0)
-
-def progress_start(base):
-    global progressBar
-    print("#### progressBar ####")
-    progressBar=ProgressBar(base)
-
-def progress_finish():
-    global progressBar
-    progressBar.finish()
-
-def progress_print(message, progress=0.05):
-    global progressBar
-    progressBar.advance(message, progress)
-
-def progress_set(message, progress):
-    global progressBar
-    progressBar.set(message, progress)
-
-
-class scene:
-    @staticmethod
-    def get():
-        global SCENE
-        return SCENE
-
-    def update(scene):
-        scene.update()
-
 
 class object:
     @staticmethod
-    def createEmpty(name):
-        global SCENE
+    def createEmpty(scene, name):
         empty=bpy.data.objects.new(name, None)
-        SCENE.objects.link(empty)
+        scene.objects.link(empty)
         return empty
-
-    @staticmethod
-    def each():
-        for o in SCENE.objects:
-            yield o
 
     @staticmethod
     def makeParent(parent, child):
         child.parent=parent
 
     @staticmethod
-    def duplicate(o):
-        global SCENE
+    def duplicate(scene, o):
         bpy.ops.object.select_all(action='DESELECT')
         o.select=True
-        SCENE.objects.active=o
+        scene.objects.active=o
         bpy.ops.object.duplicate()
-        dumy=SCENE.objects.active
+        dumy=scene.objects.active
         #bpy.ops.object.rotation_apply()
         #bpy.ops.object.scale_apply()
         #bpy.ops.object.location_apply()
@@ -150,9 +74,8 @@ class object:
         return dumy.data, dumy
 
     @staticmethod
-    def delete(o):
-        global SCENE
-        SCENE.objects.unlink(o)
+    def delete(scene, o):
+        scene.objects.unlink(o)
 
     @staticmethod
     def getData(o):
@@ -163,15 +86,9 @@ class object:
         o.select=True
 
     @staticmethod
-    def activate(o):
-        global SCENE
+    def activate(scene, o):
         o.select=True 
-        SCENE.objects.active=o
-
-    @staticmethod
-    def getActive():
-        global SCENE 
-        return SCENE.objects.active
+        scene.objects.active=o
 
     @staticmethod
     def deselectAll():
@@ -243,9 +160,9 @@ class object:
         o.vertex_groups[name].add([index], weight, 'ADD')
 
     @staticmethod
-    def createBoneGroup(o, name, color_set='DEFAULT'):
+    def createBoneGroup(scene, o, name, color_set='DEFAULT'):
         # create group
-        object.activate(o)
+        object.activate(scene, o)
         enterPoseMode()
         bpy.ops.pose.group_add()
         # set name
@@ -401,11 +318,10 @@ class material:
 
 class mesh:
     @staticmethod
-    def create(name):
-        global SCENE
+    def create(scene, name):
         mesh=bpy.data.meshes.new("Mesh")
         mesh_object= bpy.data.objects.new(name, mesh)
-        SCENE.objects.link(mesh_object)
+        scene.objects.link(mesh_object)
         return mesh, mesh_object
 
     @classmethod
@@ -509,17 +425,17 @@ class mesh:
         m.use_auto_smooth=True
 
     @staticmethod
-    def recalcNormals(mesh_object):
+    def recalcNormals(scene, mesh_object):
         bpy.ops.object.select_all(action='DESELECT')
-        object.activate(mesh_object)
+        object.activate(scene, mesh_object)
         enterEditMode()
         bpy.ops.mesh.normals_make_consistent()
         enterObjectMode()
 
     @staticmethod
-    def flipNormals(mesh_object):
+    def flipNormals(scene, mesh_object):
         bpy.ops.object.select_all(action='DESELECT')
-        object.activate(mesh_object)
+        object.activate(scene, mesh_object)
         # edit
         enterEditMode()
         bpy.ops.mesh.flip_normals()
@@ -601,11 +517,10 @@ class face:
 
 class armature:
     @staticmethod
-    def create():
-        global SCENE
+    def create(scene):
         armature = bpy.data.armatures.new('Armature')
         armature_object=bpy.data.objects.new('Armature', armature)
-        SCENE.objects.link(armature_object)
+        scene.objects.link(armature_object)
 
         armature_object.show_x_ray=True
         armature.show_names=True
@@ -618,20 +533,15 @@ class armature:
         return armature, armature_object
 
     @staticmethod
-    def makeEditable(armature_object):
-        global SCENE
+    def makeEditable(scene, armature_object):
         # select only armature object and set edit mode
-        SCENE.objects.active=armature_object
+        scene.objects.active=armature_object
         bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
         bpy.ops.object.mode_set(mode='EDIT', toggle=False)
 
     @staticmethod
     def createBone(armature, name):
         return armature.edit_bones.new(name)
-
-    @staticmethod
-    def update(armature):
-        pass
 
 
 class bone:

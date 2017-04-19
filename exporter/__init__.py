@@ -3,8 +3,16 @@
 Blenderのメッシュをワンスキンメッシュ化する
 """
 from .. import bl
-from . import oneskinmesh
-from . import bonebuilder
+
+if "bpy" in locals():
+    import imp
+    imp.reload(oneskinmesh)
+    imp.reload(bonebuilder)
+else:
+    from . import oneskinmesh
+    from . import bonebuilder
+import bpy
+
 
 
 class ObjectNode(object):
@@ -26,21 +34,21 @@ class Exporter(object):
             'skeleton',
             'root',
             ]
-    def setup(self):
+    def setup(self, scene):
         # scene内のオブジェクトの木構造を構築する
         object_node_map={}
-        for o in bl.object.each():
+        for o in scene.objects:
             object_node_map[o]=ObjectNode(o)
-        for o in bl.object.each():
+        for o in scene.objects:
             node=object_node_map[o]
             if node.o.parent:
                 object_node_map[node.o.parent].children.append(node)
-        self.root=object_node_map[bl.object.getActive()]
+        self.root=object_node_map[scene.objects.active]
 
         # ワンスキンメッシュを作る
         self.oneSkinMesh=oneskinmesh.OneSkinMesh()
-        self.oneSkinMesh.build(self.root)
-        bl.message(self.oneSkinMesh)
+        self.oneSkinMesh.build(scene, self.root)
+        #bl.message(self.oneSkinMesh)
         if len(self.oneSkinMesh.morphList)==0:
             # create emtpy skin
             self.oneSkinMesh.createEmptyBasicSkin()

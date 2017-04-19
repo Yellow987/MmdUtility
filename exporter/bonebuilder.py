@@ -102,7 +102,7 @@ class BoneBuilder(object):
         if not armatureObj:
             return
 
-        bl.message("build skeleton")
+        #bl.message("build skeleton")
         armature=bl.object.getData(armatureObj)
 
         ####################

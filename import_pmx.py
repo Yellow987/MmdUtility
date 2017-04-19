@@ -6,12 +6,18 @@ PMXモデルをインポートする。
 PMDはPMXに変換してからインポートする。
 """
 
-from . import bl
 from .pymeshio import pmx
-import bpy
+
 import bpy_extras
 import os
 print("imported modules: "+__name__)
+
+if "bpy" in locals():
+    import imp
+    imp.reload(bl)
+else:
+    from . import bl
+import bpy
 
 
 def convert_coord(pos):
@@ -51,9 +57,9 @@ def get_object_name(fmt, index, name):
     return name
     """
 
-def __import_joints(joints, rigidbodies):
+def __import_joints(scene, joints, rigidbodies):
     print("create joints")
-    container=bl.object.createEmpty('Joints')
+    container=bl.object.createEmpty(scene, 'Joints')
     layers=[
         True, False, False, False, False, False, False, False, False, False,
         False, False, False, False, False, False, False, False, False, False,
@@ -69,7 +75,7 @@ def __import_joints(joints, rigidbodies):
                 location=(c.position.x, c.position.z, c.position.y),
                 layers=layers
                 )
-        meshObject=bl.object.getActive()
+        meshObject=scene.objects.active
         constraintMeshes.append(meshObject)
         mesh=bl.object.getData(meshObject)
         bl.mesh.addMaterial(mesh, material)
@@ -95,10 +101,10 @@ def __import_joints(joints, rigidbodies):
 
     return container
 
-def __importRigidBodies(rigidbodies, bones):
+def __importRigidBodies(scene, rigidbodies, bones):
     print("create rigid bodies")
 
-    container=bl.object.createEmpty('RigidBodies')
+    container=bl.object.createEmpty(scene, 'RigidBodies')
     layers=[
         True, False, False, False, False, False, False, False, False, False,
         False, False, False, False, False, False, False, False, False, False,
@@ -138,7 +144,7 @@ def __importRigidBodies(rigidbodies, bones):
         else:
             assert(False)
 
-        meshObject=bl.object.getActive()
+        meshObject=scene.objects.active
         mesh=bl.object.getData(meshObject)
         rigidMeshes.append(meshObject)
         bl.mesh.addMaterial(mesh, material)
@@ -241,20 +247,20 @@ def __create_a_material(m, name, textures_and_images):
         print("unknown sphere mode:", m.sphere_mode)
     return material
 
-def __create_armature(bones, display_slots):
+def __create_armature(scene, bones, display_slots):
     """
     :Params:
         bones
             list of pymeshio.pmx.Bone
     """
-    armature, armature_object=bl.armature.create()
+    armature, armature_object=bl.armature.create(scene)
 
     # numbering
     for i, b in enumerate(bones): 
         b.index=i
 
     # create bones
-    bl.armature.makeEditable(armature_object)
+    bl.armature.makeEditable(scene, armature_object)
     def create_bone(b):
         bone=bl.armature.createBone(armature, b.name)
         bone[bl.BONE_ENGLISH_NAME]=b.english_name
@@ -307,7 +313,6 @@ def __create_armature(bones, display_slots):
             print(bone)
             bone.tail.z-=0.00001
 
-    bl.armature.update(armature)
 
     # pose bone construction
     bl.enterObjectMode()
@@ -385,8 +390,7 @@ def __create_armature(bones, display_slots):
             p_bone.lock_location=(True, True, True)
 
 
-    bl.armature.makeEditable(armature_object)
-    bl.armature.update(armature)
+    bl.armature.makeEditable(scene, armature_object)
 
     # create bone group
     bl.enterObjectMode()
@@ -394,7 +398,7 @@ def __create_armature(bones, display_slots):
     bone_groups={}
     for i, ds in enumerate(display_slots):
         #print(ds)
-        g=bl.object.createBoneGroup(armature_object, ds.name, "THEME%02d" % (i+1))
+        g=bl.object.createBoneGroup(scene, armature_object, ds.name, "THEME%02d" % (i+1))
         for t, index in ds.references:
             if t==0:
                 name=bones[index].name
@@ -419,7 +423,7 @@ def __create_armature(bones, display_slots):
     return armature_object
 
 
-def import_pmx_model(filepath, model, import_mesh, import_physics, **kwargs):
+def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwargs):
     if not model:
         print("fail to load %s" % filepath)
         return False
@@ -432,14 +436,14 @@ def import_pmx_model(filepath, model, import_mesh, import_physics, **kwargs):
         if len(model_name)==0:
             model_name=os.path.basename(filepath)
 
-    root_object=bl.object.createEmpty(trim_by_utf8_21byte(model_name))
+    root_object=bl.object.createEmpty(scene, trim_by_utf8_21byte(model_name))
     root_object[bl.MMD_MB_NAME]=model.name
     root_object[bl.MMD_ENGLISH_NAME]=model.english_name
     root_object[bl.MMD_MB_COMMENT]=model.comment
     root_object[bl.MMD_ENGLISH_COMMENT]=model.english_comment
 
     # armatureを作る
-    armature_object=__create_armature(model.bones, model.display_slots)
+    armature_object=__create_armature(scene, model.bones, model.display_slots)
     if armature_object:
         armature_object.parent=root_object
 
@@ -459,10 +463,10 @@ def import_pmx_model(filepath, model, import_mesh, import_physics, **kwargs):
         # mesh object
         ####################
         # object名はutf-8で21byteまで
-        mesh, mesh_object=bl.mesh.create('mesh')
+        mesh, mesh_object=bl.mesh.create(scene, 'mesh')
         # activate object
         bl.object.deselectAll()
-        bl.object.activate(mesh_object)
+        bl.object.activate(scene, mesh_object)
         bl.object.makeParent(root_object, mesh_object)
 
         ####################
@@ -584,21 +588,21 @@ def import_pmx_model(filepath, model, import_mesh, import_physics, **kwargs):
 
     if import_physics:
         # import rigid bodies
-        rigidbody_object=__importRigidBodies(model.rigidbodies, model.bones)
+        rigidbody_object=__importRigidBodies(scene, model.rigidbodies, model.bones)
         if rigidbody_object:
             bl.object.makeParent(root_object, rigidbody_object)
 
         # import joints
-        joint_object=__import_joints(model.joints, model.rigidbodies)
+        joint_object=__import_joints(scene, model.joints, model.rigidbodies)
         if joint_object:
             bl.object.makeParent(root_object, joint_object)
 
-    bl.object.activate(root_object)
+    bl.object.activate(scene, root_object)
 
     return {'FINISHED'}
 
 
-def _execute(filepath, **kwargs):
+def _execute(scene, filepath, **kwargs):
     """
     importer 本体
     """
@@ -610,11 +614,11 @@ def _execute(filepath, **kwargs):
 
         print("convert pmd to pmx...")
         from .pymeshio import converter
-        import_pmx_model(filepath, converter.pmd_to_pmx(pmd_model), **kwargs)
+        import_pmx_model(scene, filepath, converter.pmd_to_pmx(pmd_model), **kwargs)
 
     elif filepath.lower().endswith(".pmx"):
         from .pymeshio.pmx import reader
-        import_pmx_model(filepath, reader.read_from_file(filepath), **kwargs)
+        import_pmx_model(scene, filepath, reader.read_from_file(filepath), **kwargs)
 
     else:
         print("unknown file type: ", filepath)
@@ -645,9 +649,8 @@ class ImportPmx(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
             default=True)
 
     def execute(self, context):
-        bl.initialize('pmx_import', context.scene)
-        _execute(**self.as_keywords(ignore=('filter_glob',)))
-        bl.finalize()
+        _execute(context.scene, **self.as_keywords(ignore=('filter_glob',)))
+        context.scene.update()
         return  {'FINISHED'}
 
     @classmethod

@@ -1,13 +1,19 @@
 # coding: utf-8
 
 import io
-from . import bl
-from . import exporter
 from .pymeshio import pmx
 from .pymeshio import common
 from .pymeshio.pmx import writer
-import bpy
 import bpy_extras
+
+if "bpy" in locals():
+    import imp
+    imp.reload(bl)
+    imp.reload(exporter)
+else:
+    from . import bl
+    from . import exporter
+import bpy
 
 
 def near(x, y, EPSILON=1e-5):
@@ -15,7 +21,7 @@ def near(x, y, EPSILON=1e-5):
     return d>=-EPSILON and d<=EPSILON
 
 
-def create_pmx(ex, enable_bdef4=True):
+def create_pmx(scene, ex, enable_bdef4=True):
     """
     PMX 出力
     """
@@ -432,17 +438,17 @@ def create_pmx(ex, enable_bdef4=True):
     return model
 
 
-def _execute(filepath):
-    active=bl.object.getActive()
+def _execute(scene, filepath):
+    active=scene.objects.active
     if not active:
         print("abort. no active object.")
         return
 
     ex=exporter.Exporter()
-    ex.setup()
+    ex.setup(scene)
 
-    model=create_pmx(ex)
-    bl.object.activate(active)
+    model=create_pmx(scene, ex)
+    bl.object.activate(scene, active)
     with io.open(filepath, 'wb') as f:
         writer.write(f, model)
     return {'FINISHED'}
@@ -463,10 +469,9 @@ class ExportPmx(bpy.types.Operator, bpy_extras.io_utils.ExportHelper):
             default=False)
 
     def execute(self, context):
-        bl.initialize('pmx_export', context.scene)
-        _execute(**self.as_keywords(
+        _execute(context.scene, **self.as_keywords(
             ignore=('check_existing', 'filter_glob', 'use_selection')))
-        bl.finalize()
+        context.scene.update()
         return {'FINISHED'}
 
     @classmethod
