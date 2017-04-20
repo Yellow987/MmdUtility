@@ -382,7 +382,7 @@ class OneSkinMesh(object):
             return
 
         indexRelativeMap={}
-        blenderMesh=bl.object.getData(obj)
+        blenderMesh=obj.data
         baseMorph=None
 
         # shape keys

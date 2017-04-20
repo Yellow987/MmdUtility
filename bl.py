@@ -21,25 +21,6 @@ def createVector(x, y, z):
     return mathutils.Vector([x, y, z])
 
 
-class Writer(object):
-    '''
-    io wrapper
-    '''
-    def __init__(self, path, encoding):
-        self.io=open(path, "wb")
-        self.encoding=encoding
-
-    def write(self, s):
-        self.io.write(s.encode(self.encoding))
-
-    def flush(self):
-        self.io.flush()
-
-    def close(self):
-        self.io.close()
-
-
-
 class object:
     @staticmethod
     def createEmpty(scene, name):
@@ -67,10 +48,6 @@ class object:
     @staticmethod
     def delete(scene, o):
         scene.objects.unlink(o)
-
-    @staticmethod
-    def getData(o):
-        return o.data
 
     @staticmethod
     def select(o):

@@ -77,7 +77,7 @@ def __import_joints(scene, joints, rigidbodies):
                 )
         meshObject=scene.objects.active
         constraintMeshes.append(meshObject)
-        mesh=bl.object.getData(meshObject)
+        mesh=meshObject.data
         bl.mesh.addMaterial(mesh, material)
         meshObject.name=get_object_name("j{0:02}:", i, c.name)
         #meshObject.draw_transparent=True
@@ -145,7 +145,7 @@ def __importRigidBodies(scene, rigidbodies, bones):
             assert(False)
 
         meshObject=scene.objects.active
-        mesh=bl.object.getData(meshObject)
+        mesh=meshObject.data
         rigidMeshes.append(meshObject)
         bl.mesh.addMaterial(mesh, material)
         meshObject.name=get_object_name("r{0:02}:", i, rigid.name)

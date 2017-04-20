@@ -103,7 +103,7 @@ class BoneBuilder(object):
             return
 
         #bl.message("build skeleton")
-        armature=bl.object.getData(armatureObj)
+        armature=armatureObj.data
 
         ####################
         # bone group
