@@ -142,16 +142,16 @@ class OneSkinMesh(object):
         default_material=DefaultMaterial()
         # 各面の処理
         for i, face in enumerate(mesh.tessfaces):
-            faceVertexCount=bl.face.getVertexCount(face)
+            faceVertexCount=len(face.vertices)
             try:
-                material=mesh.materials[bl.face.getMaterialIndex(face)]
+                material=mesh.materials[face.material_index]
             except IndexError as e:
                 material=default_material
-            v=[mesh.vertices[index] for index in bl.face.getVertices(face)]
+            v=[mesh.vertices[index] for index in face.vertices]
             uv=bl.mesh.getFaceUV(
-                    mesh, i, face, bl.face.getVertexCount(face))
+                    mesh, i, face, len(face.vertices))
 
-            if bl.face.isSmooth(face):
+            if face.use_smooth:
                 if faceVertexCount==3:
                     self.__addFaceTriangleSmooth(
                             obj_name, material, v, uv, 
@@ -166,13 +166,13 @@ class OneSkinMesh(object):
                 if faceVertexCount==3:
                     self.__addFaceTriangleSolid(
                             obj_name, material, v, uv, 
-                            bl.face.getNormal(face),
+                            face.normal,
                             weightMap, secondWeightMap
                             )
                 elif faceVertexCount==4:
                     self.__addFaceQuadrangleSolid(
                             obj_name, material, v, uv, 
-                            bl.face.getNormal(face),
+                            face.normal,
                             weightMap, secondWeightMap
                             )
 
@@ -186,9 +186,9 @@ class OneSkinMesh(object):
                 v[0].co, 
                 v[1].co, 
                 v[2].co,
-                bl.vertex.getNormal(v[0]), 
-                bl.vertex.getNormal(v[1]), 
-                bl.vertex.getNormal(v[2]),
+                v[0].normal, 
+                v[1].normal, 
+                v[2].normal,
                 uv[0], 
                 uv[1], 
                 uv[2],
@@ -213,9 +213,9 @@ class OneSkinMesh(object):
                 v[0].co, 
                 v[1].co, 
                 v[2].co,
-                bl.vertex.getNormal(v[0]), 
-                bl.vertex.getNormal(v[1]), 
-                bl.vertex.getNormal(v[2]), 
+                v[0].normal, 
+                v[1].normal, 
+                v[2].normal, 
                 uv[0], 
                 uv[1], 
                 uv[2],
@@ -237,9 +237,9 @@ class OneSkinMesh(object):
                 v[2].co, 
                 v[3].co, 
                 v[0].co,
-                bl.vertex.getNormal(v[2]), 
-                bl.vertex.getNormal(v[3]), 
-                bl.vertex.getNormal(v[0]), 
+                v[2].normal, 
+                v[3].normal, 
+                v[0].normal, 
                 uv[2], 
                 uv[3], 
                 uv[0],

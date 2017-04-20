@@ -117,7 +117,7 @@ class BoneBuilder(object):
         def createBone(i, b):
             bone=Bone(i, 
                     b.name, b.get(bl.BONE_ENGLISH_NAME, 'bone%04d' % i),
-                    bl.bone.getHeadLocal(b),
+                    b.head_local[0:3],
                     not b.hide
                     )
             if bl.BONE_CAN_TRANSLATE in b:
@@ -141,7 +141,7 @@ class BoneBuilder(object):
                 child=self.boneMap[c.name]
                 if bone:
                     child.parent_index=bone.index
-                if bl.bone.isConnected(c):
+                if c.use_connect:
                     bone.connected=child
                 __getBone(child, c)
 

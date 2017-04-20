@@ -9,6 +9,7 @@ PMDはPMXに変換してからインポートする。
 from .pymeshio import pmx
 
 import bpy_extras
+import mathutils
 import os
 print("imported modules: "+__name__)
 
@@ -18,6 +19,47 @@ if "bpy" in locals():
 else:
     from . import bl
 import bpy
+
+
+def createArmature(scene):
+    armature = bpy.data.armatures.new('Armature')
+    armature_object=bpy.data.objects.new('Armature', armature)
+    scene.objects.link(armature_object)
+
+    armature_object.show_x_ray=True
+    armature.show_names=True
+    #armature.draw_type='OCTAHEDRAL'
+    armature.draw_type='STICK'
+    #armature.use_deform_envelopes=False
+    #armature.use_deform_vertex_groups=True
+    #armature.use_mirror_x=True
+
+    return armature, armature_object
+
+def makeEditable(scene, armature_object):
+    # select only armature object and set edit mode
+    scene.objects.active=armature_object
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
+    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
+
+def addIk(p_bone, 
+        armature_object, effector_name, 
+        chain, weight, iterations):
+    constraint = p_bone.constraints.new('IK')
+    constraint.chain_count=len(chain)
+    constraint.target=armature_object
+    constraint.subtarget=effector_name
+    constraint.use_tail=False
+    #constraint.influence=weight * 0.25
+    constraint.iterations=iterations * 10
+
+def addCopyRotation(pose_bone, target_object, target_bone, factor):
+    c=pose_bone.constraints.new(type='COPY_ROTATION')
+    c.target=target_object
+    c.subtarget=target_bone.name
+    c.influence=factor
+    c.target_space='LOCAL'
+    c.owner_space='LOCAL'
 
 
 def convert_coord(pos):
@@ -253,16 +295,16 @@ def __create_armature(scene, bones, display_slots):
         bones
             list of pymeshio.pmx.Bone
     """
-    armature, armature_object=bl.armature.create(scene)
+    armature, armature_object=createArmature(scene)
 
     # numbering
     for i, b in enumerate(bones): 
         b.index=i
 
     # create bones
-    bl.armature.makeEditable(scene, armature_object)
+    makeEditable(scene, armature_object)
     def create_bone(b):
-        bone=bl.armature.createBone(armature, b.name)
+        bone=armature.edit_bones.new(b.name)
         bone[bl.BONE_ENGLISH_NAME]=b.english_name
         # bone position
         bone.head=bl.createVector(*convert_coord(b.position))
@@ -306,7 +348,7 @@ def __create_armature(scene, bones, display_slots):
             tail_b=bones[b.tail_index]
             if bones[tail_b.parent_index]==b:
                 # connect with tail
-                bl.bone.setConnected(tail_bone)
+                tail_bone.use_connect=True
 
         if bone.head==bone.tail:
             # no size bone...
@@ -325,7 +367,7 @@ def __create_armature(scene, bones, display_slots):
             assert(len(ik.link)<16)
             ik_p_bone=pose.bones[bones[ik.target_index].name]
             assert(ik_p_bone)
-            bl.constraint.addIk(
+            addIk(
                     ik_p_bone, 
                     armature_object, b.name,
                     ik.link, ik.limit_radian, ik.loop)
@@ -361,7 +403,7 @@ def __create_armature(scene, bones, display_slots):
 
         if b.hasFlag(pmx.BONEFLAG_IS_EXTERNAL_ROTATION):
             constraint_p_bone=pose.bones[bones[b.effect_index].name]
-            bl.constraint.addCopyRotation(p_bone,
+            addCopyRotation(p_bone,
                     armature_object, constraint_p_bone, 
                     b.effect_factor)
 
@@ -393,7 +435,7 @@ def __create_armature(scene, bones, display_slots):
             p_bone.lock_location=(True, True, True)
 
 
-    bl.armature.makeEditable(scene, armature_object)
+    makeEditable(scene, armature_object)
 
     # create bone group
     bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
@@ -502,7 +544,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
             for _ in range(0, m.vertex_count, 3):
                 face_index, face=next(face_gen)
                 # assign material
-                bl.face.setMaterial(face, i)
+                face.material_index=i
                 # assign uv
                 uv0=model.vertices[next(index_gen)].uv
                 uv1=model.vertices[next(index_gen)].uv
@@ -515,7 +557,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
                     image)
 
                 # set smooth
-                bl.face.setSmooth(face, True)
+                face.use_smooth=True
 
         # fix mesh
         mesh.update()
@@ -529,7 +571,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
             # set vertex attributes(normal, bone weights)
             bl.mesh.useVertexUV(mesh)
             for i, (v,  mvert) in enumerate(zip(model.vertices, mesh.vertices)):
-                bl.vertex.setNormal(mvert, convert_coord(v.normal))
+                mvert.normal=mathutils.Vector(convert_coord(v.normal))
                 if isinstance(v.deform, pmx.Bdef1):
                     bl.object.assignVertexGroup(mesh_object,
                             model.bones[v.deform.index0].name, i, 1.0)
