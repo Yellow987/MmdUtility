@@ -466,7 +466,8 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         mesh, mesh_object=bl.mesh.create(scene, 'mesh')
         # activate object
         bl.object.deselectAll()
-        bl.object.activate(scene, mesh_object)
+        mesh_object.select=True 
+        scene.objects.active=mesh_object
         bl.object.makeParent(root_object, mesh_object)
 
         ####################
@@ -597,7 +598,8 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         if joint_object:
             bl.object.makeParent(root_object, joint_object)
 
-    bl.object.activate(scene, root_object)
+    root_object.select=True 
+    scene.objects.active=root_object
 
     return {'FINISHED'}
 

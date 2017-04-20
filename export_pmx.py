@@ -448,7 +448,9 @@ def _execute(scene, filepath):
     ex.setup(scene)
 
     model=create_pmx(scene, ex)
-    bl.object.activate(scene, active)
+
+    active.select=True 
+    scene.objects.active=active
     with io.open(filepath, 'wb') as f:
         writer.write(f, model)
     return {'FINISHED'}

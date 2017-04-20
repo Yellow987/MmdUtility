@@ -10,6 +10,7 @@ try:
 except:
     pass
 
+
 FS_ENCODING=sys.getfilesystemencoding()
 if os.path.exists(os.path.dirname(sys.argv[0])+"/utf8"):
     INTERNAL_ENCODING='utf-8'
@@ -44,19 +45,6 @@ class object:
         #bpy.ops.object.location_apply()
         dumy.data.update(calc_tessface=True)
         return dumy.data, dumy
-
-    @staticmethod
-    def delete(scene, o):
-        scene.objects.unlink(o)
-
-    @staticmethod
-    def select(o):
-        o.select=True
-
-    @staticmethod
-    def activate(scene, o):
-        o.select=True 
-        scene.objects.active=o
 
     @staticmethod
     def deselectAll():
@@ -130,7 +118,8 @@ class object:
     @staticmethod
     def createBoneGroup(scene, o, name, color_set='DEFAULT'):
         # create group
-        object.activate(scene, o)
+        o.select=True 
+        scene.objects.active=o
         bpy.ops.object.mode_set(mode='POSE', toggle=False)
         bpy.ops.pose.group_add()
         # set name
@@ -395,7 +384,8 @@ class mesh:
     @staticmethod
     def recalcNormals(scene, mesh_object):
         bpy.ops.object.select_all(action='DESELECT')
-        object.activate(scene, mesh_object)
+        mesh_object.select=True 
+        scene.objects.active=mesh_object
         bpy.ops.object.mode_set(mode='EDIT', toggle=False)
         bpy.ops.mesh.normals_make_consistent()
         bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
@@ -403,7 +393,8 @@ class mesh:
     @staticmethod
     def flipNormals(scene, mesh_object):
         bpy.ops.object.select_all(action='DESELECT')
-        object.activate(scene, mesh_object)
+        mesh_object.select=True 
+        scene.objects.active=mesh_object
         # edit
         bpy.ops.object.mode_set(mode='EDIT', toggle=False)
         bpy.ops.mesh.flip_normals()

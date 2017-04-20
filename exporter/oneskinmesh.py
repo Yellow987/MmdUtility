@@ -372,7 +372,7 @@ class OneSkinMesh(object):
             self.__processFaces(obj.name, copyMesh, weightMap, secondWeightMap)
             self.__weights(copyObj, copyMesh, obj.name)
             self.__skin(copyObj, obj.name)
-        bl.object.delete(scene, copyObj)
+        scene.objects.unlink(copyObj)
 
     def createEmptyBasicSkin(self):
         self.__getOrCreateMorph('base', 0)
