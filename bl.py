@@ -64,22 +64,6 @@ class object:
             return o.add_shape_key(name)
 
     @staticmethod
-    def hasShapeKey(o):
-        return o.data.shape_keys
-
-    @staticmethod
-    def pinShape(o, enable):
-        o.show_only_shape_key=enable
-
-    @staticmethod
-    def setActivateShapeKey(o, index):
-        o.active_shape_key_index=index
-
-    @staticmethod
-    def getPose(o):
-        return o.pose
-
-    @staticmethod
     def getVertexGroup(o, name):
         indices=[]
         for i, v in enumerate(o.data.vertices):
@@ -111,15 +95,11 @@ class object:
         bpy.ops.object.mode_set(mode='POSE', toggle=False)
         bpy.ops.pose.group_add()
         # set name
-        pose=object.getPose(o)
+        pose=o.pose
         g=pose.bone_groups.active
         g.name=name
         g.color_set=color_set
         return g
-
-    @staticmethod
-    def boneGroups(o):
-        return object.getPose(o).bone_groups
 
 
 class modifier:
@@ -521,38 +501,6 @@ class bone:
 
 class constraint:
     @staticmethod
-    def ikChainLen(c):
-        return c.chain_count
-
-    @staticmethod
-    def ikTarget(c):
-        return c.subtarget
-
-    @staticmethod
-    def ikItration(c):
-        return c.iterations
-
-    @staticmethod
-    def ikRotationWeight(c):
-        return c.weight
-
-    @staticmethod
-    def isIKSolver(c):
-        return c.type=='IK'
-
-    @staticmethod
-    def isCopyRotation(c):
-        return c.type=='COPY_ROTATION'
-
-    @staticmethod
-    def isLimitRotation(c):
-        return c.type=='LIMIT_ROTATION'
-
-    @staticmethod
-    def isLimitTranslation(c):
-        return c.type=='LIMIT_LOCATION'
-
-    @staticmethod
     def addIk(p_bone, 
             armature_object, effector_name, 
             chain, weight, iterations):
@@ -571,16 +519,6 @@ class constraint:
         c.subtarget=target_bone.name
         c.influence=factor
         c.target_space='LOCAL'
-        c.owner_space='LOCAL'
-
-    @staticmethod
-    def addLimitRotation(pose_bone):
-        c=pose_bone.constraints.new(type='LIMIT_ROTATION')
-        c.owner_space='LOCAL'
-
-    @staticmethod
-    def addLimitTranslateion(pose_bone):
-        c=pose_bone.constraints.new(type='LIMIT_LOCATION')
         c.owner_space='LOCAL'
 
 

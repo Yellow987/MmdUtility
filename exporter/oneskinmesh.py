@@ -347,7 +347,7 @@ class OneSkinMesh(object):
         if len(copyMesh.vertices)>0:
             # apply transform
             copyMesh.transform(obj.matrix_world)
-            if bl.object.hasShapeKey(copyObj):
+            if copyObj.data.shape_keys:
                 matrix=obj.matrix_world
                 for key in copyMesh.shape_keys.key_blocks:
                     for point in key.data:
@@ -378,7 +378,7 @@ class OneSkinMesh(object):
         self.__getOrCreateMorph('base', 0)
 
     def __skin(self, obj, obj_name):
-        if not bl.object.hasShapeKey(obj):
+        if not obj.data.shape_keys:
             return
 
         indexRelativeMap={}

@@ -108,7 +108,7 @@ class BoneBuilder(object):
         ####################
         # bone group
         ####################
-        for g in bl.object.boneGroups(armatureObj):
+        for g in armatureObj.pose.bone_groups:
             self.bone_groups.append((g.name, []))
 
         ####################
@@ -153,7 +153,7 @@ class BoneBuilder(object):
         ####################
         # get pose bone info
         ####################
-        pose = bl.object.getPose(armatureObj)
+        pose = armatureObj.pose
         for b in pose.bones.values():
             bone=self.boneMap[b.name]
             ####################
@@ -166,7 +166,7 @@ class BoneBuilder(object):
                 bone.canTranslate=True
 
             for c in b.constraints:
-                if bl.constraint.isIKSolver(c):
+                if c.type=='IK':
                     # IK effector
                     ####################
                     # IK 接続先
@@ -175,7 +175,7 @@ class BoneBuilder(object):
 
                     # IK solver
                     ####################
-                    target=self.boneByName(bl.constraint.ikTarget(c))
+                    target=self.boneByName(c.subtarget)
                     target.ikSolver=IKSolver(target.index, effector.index, 
                                 int(c.iterations * 0.1), 
                                 armature.bones[target.name].get(bl.IK_UNITRADIAN, 1.0)
@@ -183,8 +183,7 @@ class BoneBuilder(object):
                     # ik chain
                     ####################
                     chain=b.parent
-                    chainLength=bl.constraint.ikChainLen(c)
-                    for i in range(chainLength):
+                    for i in range(c.chain_count):
                         limit_anlge=False
                         limit_min=[0, 0, 0]
                         limit_max=[0, 0, 0]
@@ -208,17 +207,17 @@ class BoneBuilder(object):
                         # next
                         chain=chain.parent
 
-                if bl.constraint.isCopyRotation(c):
+                if c.type=='COPY_ROTATION':
                     # copy rotation
                     bone.constraint=CONSTRAINT_COPY_ROTATION
                     bone.constraintTarget=c.subtarget
                     bone.constraintInfluence=c.influence
 
-                if bl.constraint.isLimitRotation(c):
+                if c.type=='LIMIT_ROTATION':
                     # fixed_axis
                     bone.constraint=CONSTRAINT_LIMIT_ROTATION
 
-                if bl.constraint.isLimitTranslation(c):
+                if c.type=='LIMIT_LOCATION':
                     # rotation only
                     bone.constraint=CONSTRAINT_LIMIT_TRANSLATION
 

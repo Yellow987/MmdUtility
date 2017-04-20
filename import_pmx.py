@@ -316,7 +316,7 @@ def __create_armature(scene, bones, display_slots):
 
     # pose bone construction
     bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
-    pose = bl.object.getPose(armature_object)
+    pose = armature_object.pose
     for b in bones:
         p_bone=pose.bones[b.name]
         if b.hasFlag(pmx.BONEFLAG_IS_IK):
@@ -366,7 +366,8 @@ def __create_armature(scene, bones, display_slots):
                     b.effect_factor)
 
         if b.hasFlag(pmx.BONEFLAG_HAS_FIXED_AXIS):
-            bl.constraint.addLimitRotation(p_bone)
+            c=p_bone.constraints.new(type='LIMIT_ROTATION')
+            c.owner_space='LOCAL'
 
         if b.parent_index!=-1:
             parent_b=bones[b.parent_index]
@@ -375,7 +376,8 @@ def __create_armature(scene, bones, display_slots):
                     and parent_b.tail_index==b.index
                     ):
                 # 移動制限を尻尾位置の接続フラグに流用する
-                bl.constraint.addLimitTranslateion(p_bone)
+                c=p_bone.constraints.new(type='LIMIT_LOCATION')
+                c.owner_space='LOCAL'
             else:
                 parent_parent_b=bones[parent_b.parent_index]
                 if (
@@ -383,7 +385,8 @@ def __create_armature(scene, bones, display_slots):
                         and parent_parent_b.tail_index==b.index
                         ):
                     # 移動制限を尻尾位置の接続フラグに流用する
-                    bl.constraint.addLimitTranslateion(p_bone)
+                    c=p_bone.constraints.new(type='LIMIT_LOCATION')
+                    c.owner_space='LOCAL'
 
         if not b.hasFlag(pmx.BONEFLAG_CAN_TRANSLATE):
             # translatation lock
@@ -394,7 +397,7 @@ def __create_armature(scene, bones, display_slots):
 
     # create bone group
     bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
-    pose = bl.object.getPose(armature_object)
+    pose = armature_object.pose
     bone_groups={}
     for i, ds in enumerate(display_slots):
         #print(ds)
@@ -558,7 +561,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         ####################
         if len(model.morphs)>0:
             # set shape_key pin
-            bl.object.pinShape(mesh_object, True)
+            mesh_object.show_only_shape_key=True
             # create base key
             bl.object.addVertexGroup(mesh_object, bl.MMD_SHAPE_GROUP_NAME)
             # assign all vertext to group
@@ -585,7 +588,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
                         break
 
             # select base shape
-            bl.object.setActivateShapeKey(mesh_object, 0)
+            mesh_object.active_shape_key_index=0
 
     if import_physics:
         # import rigid bodies
