@@ -5,6 +5,25 @@ from .. import bl
 from ..pymeshio import englishmap
 
 
+def getFaceUV(mesh, i, faces, count=3):
+    active_uv_texture=None
+    for t in mesh.tessface_uv_textures:
+        if t.active:
+            active_uv_texture=t
+            break
+    if active_uv_texture and active_uv_texture.data[i]:
+        uvFace=active_uv_texture.data[i]
+        if count==3:
+            return (uvFace.uv1, uvFace.uv2, uvFace.uv3)
+        elif count==4:
+            return (uvFace.uv1, uvFace.uv2, uvFace.uv3, uvFace.uv4)
+        else:
+            print(count)
+            assert(False)
+    else:
+        return ((0, 0), (0, 0), (0, 0), (0, 0))
+
+
 class Morph(object):
     __slots__=['name', 'type', 'offsets']
     def __init__(self, name, type):
@@ -148,7 +167,7 @@ class OneSkinMesh(object):
             except IndexError as e:
                 material=default_material
             v=[mesh.vertices[index] for index in face.vertices]
-            uv=bl.mesh.getFaceUV(
+            uv=getFaceUV(
                     mesh, i, face, len(face.vertices))
 
             if face.use_smooth:

@@ -21,6 +21,45 @@ else:
 import bpy
 
 
+def createMesh(scene, name):
+    mesh=bpy.data.meshes.new("Mesh")
+    mesh_object= bpy.data.objects.new(name, mesh)
+    scene.objects.link(mesh_object)
+    return mesh, mesh_object
+
+def addGeometry(mesh, vertices, faces):
+    from bpy_extras.io_utils import unpack_list, unpack_face_list
+    mesh.vertices.add(len(vertices))
+    mesh.vertices.foreach_set("co", unpack_list(vertices))
+    mesh.tessfaces.add(len(faces))
+    mesh.tessfaces.foreach_set("vertices_raw", unpack_face_list(faces))
+    #mesh.from_pydata(vertices, [], faces)
+    """
+    mesh.add_geometry(len(vertices), 0, len(faces))
+    # add vertex
+    unpackedVertices=[]
+    for v in vertices:
+        unpackedVertices.extend(v)
+    mesh.vertices.foreach_set("co", unpackedVertices)
+    # add face
+    unpackedFaces = []
+    for face in faces:
+        if len(face) == 4:
+            if face[3] == 0:
+                # rotate indices if the 4th is 0
+                face = [face[3], face[0], face[1], face[2]]
+        elif len(face) == 3:
+            if face[2] == 0:
+                # rotate indices if the 3rd is 0
+                face = [face[2], face[0], face[1], 0]
+            else:
+                face.append(0)
+        unpackedFaces.extend(face)
+    mesh.faces.foreach_set("verts_raw", unpackedFaces)
+    """
+    assert(len(vertices)==len(mesh.vertices))
+    #assert(len(faces)==len(cls.getFaces(mesh)))
+
 def setFaceUV(m, i, face, uv_array, image):
     uv_face=m.tessface_uv_textures[0].data[i]
     uv_face.uv=uv_array
@@ -515,7 +554,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         # mesh object
         ####################
         # object名はutf-8で21byteまで
-        mesh, mesh_object=bl.mesh.create(scene, 'mesh')
+        mesh, mesh_object=createMesh(scene, 'mesh')
         # activate object
         bpy.ops.object.select_all(action='DESELECT')
         mesh_object.select=True 
@@ -526,11 +565,11 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         # vertices & faces
         ####################
         # flip
-        bl.mesh.addGeometry(mesh, vertices,
+        addGeometry(mesh, vertices,
                 [(model.indices[i+2], model.indices[i+1], model.indices[i])
                     for i in range(0, len(model.indices), 3)])
         assert(len(model.vertices)==len(mesh.vertices))
-        bl.mesh.addUV(mesh)
+        mesh.tessface_uv_textures.new()
 
         ####################
         # material
@@ -575,8 +614,6 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         if armature_object:
             # armature modifirer
             bl.modifier.addArmature(mesh_object, armature_object)
-            # set vertex attributes(normal, bone weights)
-            bl.mesh.useVertexUV(mesh)
             for i, (v,  mvert) in enumerate(zip(model.vertices, mesh.vertices)):
                 mvert.normal=mathutils.Vector(convert_coord(v.normal))
                 if isinstance(v.deform, pmx.Bdef1):
