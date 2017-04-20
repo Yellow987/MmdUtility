@@ -21,6 +21,13 @@ else:
 import bpy
 
 
+def setFaceUV(m, i, face, uv_array, image):
+    uv_face=m.tessface_uv_textures[0].data[i]
+    uv_face.uv=uv_array
+    if image:
+        uv_face.image=image
+        #uv_face.use_image=True
+
 def createArmature(scene):
     armature = bpy.data.armatures.new('Armature')
     armature_object=bpy.data.objects.new('Armature', armature)
@@ -120,7 +127,7 @@ def __import_joints(scene, joints, rigidbodies):
         meshObject=scene.objects.active
         constraintMeshes.append(meshObject)
         mesh=meshObject.data
-        bl.mesh.addMaterial(mesh, material)
+        mesh.materials.append(material)
         meshObject.name=get_object_name("j{0:02}:", i, c.name)
         #meshObject.draw_transparent=True
         #meshObject.draw_wire=True
@@ -189,7 +196,7 @@ def __importRigidBodies(scene, rigidbodies, bones):
         meshObject=scene.objects.active
         mesh=meshObject.data
         rigidMeshes.append(meshObject)
-        bl.mesh.addMaterial(mesh, material)
+        mesh.materials.append(material)
         meshObject.name=get_object_name("r{0:02}:", i, rigid.name)
         #meshObject.draw_transparent=True
         #meshObject.draw_wire=True
@@ -533,7 +540,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         for i, m in enumerate(model.materials):
             name=get_object_name("{0:02}:", i, m.name)
             material=__create_a_material(m, name, textures_and_images)
-            bl.mesh.addMaterial(mesh, material)
+            mesh.materials.append(material)
 
             # texture image
             image=(textures_and_images.get[m.texture_index] 
@@ -549,7 +556,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
                 uv0=model.vertices[next(index_gen)].uv
                 uv1=model.vertices[next(index_gen)].uv
                 uv2=model.vertices[next(index_gen)].uv
-                bl.mesh.setFaceUV(mesh, face_index, face, [# fix uv
+                setFaceUV(mesh, face_index, face, [# fix uv
                     (uv2.x, 1.0-uv2.y),
                     (uv1.x, 1.0-uv1.y),
                     (uv0.x, 1.0-uv0.y)

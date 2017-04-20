@@ -323,66 +323,6 @@ class mesh:
         else:
             return ((0, 0), (0, 0), (0, 0), (0, 0))
 
-    @staticmethod
-    def setFaceUV(m, i, face, uv_array, image):
-        uv_face=m.tessface_uv_textures[0].data[i]
-        uv_face.uv=uv_array
-        if image:
-            uv_face.image=image
-            #uv_face.use_image=True
-
-    @staticmethod
-    def vertsDelete(m, remove_vertices):
-        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-        bpy.ops.mesh.select_all(action='DESELECT')
-        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
-
-        for i in remove_vertices:
-            m.vertices[i].select=True
-
-        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-        bpy.ops.mesh.delete(type='VERT')
-        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
-
-    @staticmethod
-    def setSmooth(m, smoothing):
-        m.auto_smooth_angle=int(smoothing)
-        m.use_auto_smooth=True
-
-    @staticmethod
-    def recalcNormals(scene, mesh_object):
-        bpy.ops.object.select_all(action='DESELECT')
-        mesh_object.select=True 
-        scene.objects.active=mesh_object
-        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-        bpy.ops.mesh.normals_make_consistent()
-        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
-
-    @staticmethod
-    def flipNormals(scene, mesh_object):
-        bpy.ops.object.select_all(action='DESELECT')
-        mesh_object.select=True 
-        scene.objects.active=mesh_object
-        # edit
-        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-        bpy.ops.mesh.flip_normals()
-        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
-
-    @staticmethod
-    def addMaterial(m, material):
-        m.materials.append(material)
-
-    @staticmethod
-    def getMaterial(m, index):
-        return m.materials[index]
-
-    @staticmethod
-    def getFaces(m):
-        try:
-            return m.polygons
-        except AttributeError:
-            return m.faces
-
 
 """
 custom property keys
