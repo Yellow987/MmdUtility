@@ -79,7 +79,7 @@ class OneSkinMesh(object):
             self.build(scene, child)
 
     def addMesh(self, scene, obj):
-        if not bl.object.isVisible(obj):
+        if obj.hide:
             return
         self.__mesh(scene, obj)
         self.__rigidbody(obj)

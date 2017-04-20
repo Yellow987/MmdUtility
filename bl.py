@@ -30,10 +30,6 @@ class object:
         return empty
 
     @staticmethod
-    def makeParent(parent, child):
-        child.parent=parent
-
-    @staticmethod
     def duplicate(scene, o):
         bpy.ops.object.select_all(action='DESELECT')
         o.select=True
@@ -47,10 +43,6 @@ class object:
         return dumy.data, dumy
 
     @staticmethod
-    def deselectAll():
-        bpy.ops.object.select_all(action='DESELECT')
-
-    @staticmethod
     def setLayerMask(object, layers):
         layer=[]
         for i in range(20):
@@ -59,10 +51,6 @@ class object:
             except IndexError:
                 layer.append(False)
         object.layers=layer
-
-    @staticmethod
-    def isVisible(o):
-        return False if o.hide else True
 
     @staticmethod
     def getShapeKeys(o):

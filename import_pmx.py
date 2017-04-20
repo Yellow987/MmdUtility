@@ -97,7 +97,7 @@ def __import_joints(scene, joints, rigidbodies):
         meshObject[bl.CONSTRAINT_SPRING_ROT]=VtoV(c.spring_constant_rotation)
 
     for meshObject in reversed(constraintMeshes):
-        bl.object.makeParent(container, meshObject)
+        meshObject.parent=container
 
     return container
 
@@ -168,7 +168,7 @@ def __importRigidBodies(scene, rigidbodies, bones):
         meshObject[bl.RIGID_FRICTION]=rigid.param.friction
 
     for meshObject in reversed(rigidMeshes):
-        bl.object.makeParent(container, meshObject)
+        meshObject.parent=container
 
     return container
 
@@ -465,10 +465,10 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         # object名はutf-8で21byteまで
         mesh, mesh_object=bl.mesh.create(scene, 'mesh')
         # activate object
-        bl.object.deselectAll()
+        bpy.ops.object.select_all(action='DESELECT')
         mesh_object.select=True 
         scene.objects.active=mesh_object
-        bl.object.makeParent(root_object, mesh_object)
+        mesh_object.parent=root_object
 
         ####################
         # vertices & faces
@@ -591,12 +591,12 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         # import rigid bodies
         rigidbody_object=__importRigidBodies(scene, model.rigidbodies, model.bones)
         if rigidbody_object:
-            bl.object.makeParent(root_object, rigidbody_object)
+            rigidbody_object.parent=root_object
 
         # import joints
         joint_object=__import_joints(scene, model.joints, model.rigidbodies)
         if joint_object:
-            bl.object.makeParent(root_object, joint_object)
+            joint_object.parent=root_object
 
     root_object.select=True 
     scene.objects.active=root_object
