@@ -17,15 +17,6 @@ else:
     INTERNAL_ENCODING=FS_ENCODING
 
 
-def enterEditMode():
-    bpy.ops.object.mode_set(mode='EDIT', toggle=False)
-
-def enterObjectMode():
-    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
-
-def enterPoseMode():
-    bpy.ops.object.mode_set(mode='POSE', toggle=False)
-
 def createVector(x, y, z):
     return mathutils.Vector([x, y, z])
 
@@ -163,7 +154,7 @@ class object:
     def createBoneGroup(scene, o, name, color_set='DEFAULT'):
         # create group
         object.activate(scene, o)
-        enterPoseMode()
+        bpy.ops.object.mode_set(mode='POSE', toggle=False)
         bpy.ops.pose.group_add()
         # set name
         pose=object.getPose(o)
@@ -408,16 +399,16 @@ class mesh:
 
     @staticmethod
     def vertsDelete(m, remove_vertices):
-        enterEditMode()
+        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
         bpy.ops.mesh.select_all(action='DESELECT')
-        enterObjectMode()
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
         for i in remove_vertices:
             m.vertices[i].select=True
 
-        enterEditMode()
+        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
         bpy.ops.mesh.delete(type='VERT')
-        enterObjectMode()
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
     @staticmethod
     def setSmooth(m, smoothing):
@@ -428,18 +419,18 @@ class mesh:
     def recalcNormals(scene, mesh_object):
         bpy.ops.object.select_all(action='DESELECT')
         object.activate(scene, mesh_object)
-        enterEditMode()
+        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
         bpy.ops.mesh.normals_make_consistent()
-        enterObjectMode()
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
     @staticmethod
     def flipNormals(scene, mesh_object):
         bpy.ops.object.select_all(action='DESELECT')
         object.activate(scene, mesh_object)
         # edit
-        enterEditMode()
+        bpy.ops.object.mode_set(mode='EDIT', toggle=False)
         bpy.ops.mesh.flip_normals()
-        enterObjectMode()
+        bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
     @staticmethod
     def addMaterial(m, material):

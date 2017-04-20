@@ -315,7 +315,7 @@ def __create_armature(scene, bones, display_slots):
 
 
     # pose bone construction
-    bl.enterObjectMode()
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
     pose = bl.object.getPose(armature_object)
     for b in bones:
         p_bone=pose.bones[b.name]
@@ -393,7 +393,7 @@ def __create_armature(scene, bones, display_slots):
     bl.armature.makeEditable(scene, armature_object)
 
     # create bone group
-    bl.enterObjectMode()
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
     pose = bl.object.getPose(armature_object)
     bone_groups={}
     for i, ds in enumerate(display_slots):
@@ -407,7 +407,7 @@ def __create_armature(scene, bones, display_slots):
                 except KeyError as e:
                     print("pose %s is not found" % name)
 
-    bl.enterObjectMode()
+    bpy.ops.object.mode_set(mode='OBJECT', toggle=False)
 
     # fix flag
     boneNameMap={}
