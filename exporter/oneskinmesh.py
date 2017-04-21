@@ -5,6 +5,26 @@ from .. import bl
 from ..pymeshio import englishmap
 
 
+def duplicate(scene, o):
+    bpy.ops.object.select_all(action='DESELECT')
+    o.select=True
+    scene.objects.active=o
+    bpy.ops.object.duplicate()
+    dumy=scene.objects.active
+    #bpy.ops.object.rotation_apply()
+    #bpy.ops.object.scale_apply()
+    #bpy.ops.object.location_apply()
+    dumy.data.update(calc_tessface=True)
+    return dumy.data, dumy
+
+def getVertexGroup(o, name):
+    indices=[]
+    for i, v in enumerate(o.data.vertices):
+        for g in v.groups:
+            if o.vertex_groups[g.group].name==name:
+                indices.append(i)
+    return indices
+
 def getFaceUV(mesh, i, faces, count=3):
     active_uv_texture=None
     for t in mesh.tessface_uv_textures:
@@ -361,7 +381,7 @@ class OneSkinMesh(object):
         #bl.message("export: %s" % obj.name)
 
         # メッシュのコピーを生成してオブジェクトの行列を適用する
-        copyMesh, copyObj=bl.object.duplicate(scene, obj)
+        copyMesh, copyObj=duplicate(scene, obj)
         copyObj.name="tmp_object"
         if len(copyMesh.vertices)>0:
             # apply transform
@@ -405,13 +425,13 @@ class OneSkinMesh(object):
         baseMorph=None
 
         # shape keys
-        vg=bl.object.getVertexGroup(obj, bl.MMD_SHAPE_GROUP_NAME)
+        vg=getVertexGroup(obj, bl.MMD_SHAPE_GROUP_NAME)
         if len(vg)==0:
             vg=list(range(len(blenderMesh.vertices)))
 
         # base
         used=set()
-        for b in bl.object.getShapeKeys(obj):
+        for b in obj.data.shape_keys.key_blocks:
             if b.name==bl.BASE_SHAPE_NAME:
                 baseMorph=self.__getOrCreateMorph('base', 0)
                 basis=b
@@ -440,7 +460,7 @@ class OneSkinMesh(object):
             return
 
         # shape keys
-        for b in bl.object.getShapeKeys(obj):
+        for b in obj.data.shape_keys.key_blocks:
             if b.name==bl.BASE_SHAPE_NAME:
                 continue
 

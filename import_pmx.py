@@ -21,6 +21,29 @@ else:
 import bpy
 
 
+def createEmpty(scene, name):
+    empty=bpy.data.objects.new(name, None)
+    scene.objects.link(empty)
+    return empty
+
+def assignVertexGroup(o, name, index, weight):
+    if name not in o.vertex_groups:
+        o.vertex_groups.new(name)
+    o.vertex_groups[name].add([index], weight, 'ADD')
+
+def createBoneGroup(scene, o, name, color_set='DEFAULT'):
+    # create group
+    o.select=True 
+    scene.objects.active=o
+    bpy.ops.object.mode_set(mode='POSE', toggle=False)
+    bpy.ops.pose.group_add()
+    # set name
+    pose=o.pose
+    g=pose.bone_groups.active
+    g.name=name
+    g.color_set=color_set
+    return g
+
 def createTexture(path):
     texture=bpy.data.textures.new(os.path.basename(path), 'IMAGE')
     texture.use_mipmap=True
@@ -179,7 +202,7 @@ def get_object_name(fmt, index, name):
 
 def __import_joints(scene, joints, rigidbodies):
     print("create joints")
-    container=bl.object.createEmpty(scene, 'Joints')
+    container=createEmpty(scene, 'Joints')
     layers=[
         True, False, False, False, False, False, False, False, False, False,
         False, False, False, False, False, False, False, False, False, False,
@@ -225,7 +248,7 @@ def __import_joints(scene, joints, rigidbodies):
 def __importRigidBodies(scene, rigidbodies, bones):
     print("create rigid bodies")
 
-    container=bl.object.createEmpty(scene, 'RigidBodies')
+    container=createEmpty(scene, 'RigidBodies')
     layers=[
         True, False, False, False, False, False, False, False, False, False,
         False, False, False, False, False, False, False, False, False, False,
@@ -522,7 +545,7 @@ def __create_armature(scene, bones, display_slots):
     bone_groups={}
     for i, ds in enumerate(display_slots):
         #print(ds)
-        g=bl.object.createBoneGroup(scene, armature_object, ds.name, "THEME%02d" % (i+1))
+        g=createBoneGroup(scene, armature_object, ds.name, "THEME%02d" % (i+1))
         for t, index in ds.references:
             if t==0:
                 name=bones[index].name
@@ -560,7 +583,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         if len(model_name)==0:
             model_name=os.path.basename(filepath)
 
-    root_object=bl.object.createEmpty(scene, trim_by_utf8_21byte(model_name))
+    root_object=createEmpty(scene, trim_by_utf8_21byte(model_name))
     root_object[bl.MMD_MB_NAME]=model.name
     root_object[bl.MMD_ENGLISH_NAME]=model.english_name
     root_object[bl.MMD_MB_COMMENT]=model.comment
@@ -652,27 +675,27 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
             for i, (v,  mvert) in enumerate(zip(model.vertices, mesh.vertices)):
                 mvert.normal=mathutils.Vector(convert_coord(v.normal))
                 if isinstance(v.deform, pmx.Bdef1):
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index0].name, i, 1.0)
                 elif isinstance(v.deform, pmx.Bdef2):
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index0].name, i, v.deform.weight0)
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index1].name, i, 1.0-v.deform.weight0)
                 elif isinstance(v.deform, pmx.Bdef4):
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index0].name, i, v.deform.weight0)
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index1].name, i, v.deform.weight1)
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index2].name, i, v.deform.weight2)
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index3].name, i, v.deform.weight3)
                 elif isinstance(v.deform, pmx.Sdef):
                     # fail safe
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index0].name, i, v.deform.weight0)
-                    bl.object.assignVertexGroup(mesh_object,
+                    assignVertexGroup(mesh_object,
                             model.bones[v.deform.index1].name, i, 1.0-v.deform.weight0)
                 else:
                     raise Exception("unknown deform: %s" % v.deform)
@@ -684,18 +707,18 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
             # set shape_key pin
             mesh_object.show_only_shape_key=True
             # create base key
-            bl.object.addVertexGroup(mesh_object, bl.MMD_SHAPE_GROUP_NAME)
+            mesh_object.vertex_groups.new(bl.MMD_SHAPE_GROUP_NAME)
             # assign all vertext to group
             for i, v in enumerate(mesh.vertices):
-                bl.object.assignVertexGroup(mesh_object,
+                assignVertexGroup(mesh_object,
                         bl.MMD_SHAPE_GROUP_NAME, i, 0);
             # create base key
-            baseShapeBlock=bl.object.addShapeKey(mesh_object, bl.BASE_SHAPE_NAME)
+            baseShapeBlock=mesh_object.shape_key_add(bl.BASE_SHAPE_NAME)
             mesh.update()
 
             # each morph
             for m in model.morphs:
-                new_shape_key=bl.object.addShapeKey(mesh_object, m.name)
+                new_shape_key=mesh_object.shape_key_add(m.name)
                 for o in m.offsets:
                     if isinstance(o, pmx.VertexMorphOffset):
                         # vertex morph
