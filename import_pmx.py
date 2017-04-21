@@ -21,6 +21,25 @@ else:
 import bpy
 
 
+def addTexture(material, texture, enable=True, blend_type='MULTIPLY'):
+    # search free slot
+    index=None
+    for i, slot in enumerate(material.texture_slots):
+        if not slot:
+            index=i
+            break
+    if index==None:
+        return
+    material.use_shadeless=True
+    #
+    slot=material.texture_slots.create(index)
+    slot.texture=texture
+    slot.texture_coords='UV'
+    slot.blend_type=blend_type
+    slot.use_map_alpha=True
+    slot.use=enable
+    return index
+
 def createMesh(scene, name):
     mesh=bpy.data.meshes.new("Mesh")
     mesh_object= bpy.data.objects.new(name, mesh)
@@ -152,7 +171,8 @@ def __import_joints(scene, joints, rigidbodies):
         True, False, False, False, False, False, False, False, False, False,
         False, False, False, False, False, False, False, False, False, False,
             ]
-    material=bl.material.create('joint')
+    material=bpy.data.materials.new('joint')
+
     material.diffuse_color=(1, 0, 0)
     constraintMeshes=[]
     for i, c in enumerate(joints):
@@ -197,7 +217,7 @@ def __importRigidBodies(scene, rigidbodies, bones):
         True, False, False, False, False, False, False, False, False, False,
         False, False, False, False, False, False, False, False, False, False,
             ]
-    material=bl.material.create('rigidBody')
+    material=bpy.data.materials.new('rigidBody')
     rigidMeshes=[]
     for i, rigid in enumerate(rigidbodies):
         if rigid.bone_index==-1:
@@ -272,7 +292,7 @@ def __create_a_material(m, name, textures_and_images):
         textures_and_images
             list of (texture, image)
     """
-    material = bl.material.create(name)
+    material = bpy.data.materials.new(name)
     # diffuse
     material.diffuse_shader='FRESNEL'
     material.diffuse_color=[
@@ -300,7 +320,7 @@ def __create_a_material(m, name, textures_and_images):
     # texture
     if m.texture_index!=-1:
         texture=textures_and_images[m.texture_index][0]
-        bl.material.addTexture(material, texture)
+        addTexture(material, texture)
     # toon texture
     if m.toon_sharing_flag==1:
         material[bl.MATERIAL_SHAREDTOON]=m.toon_texture_index
@@ -308,7 +328,7 @@ def __create_a_material(m, name, textures_and_images):
         if m.toon_texture_index!=-1:
             toon_texture=textures_and_images[m.toon_texture_index][0]
             toon_texture[bl.TEXTURE_TYPE]='TOON'
-            bl.material.addTexture(material, toon_texture)
+            addTexture(material, toon_texture)
     # sphere texture
     if m.sphere_mode==pmx.MATERIALSPHERE_NONE:
         material[bl.MATERIAL_SPHERE_MODE]=pmx.MATERIALSPHERE_NONE
@@ -319,7 +339,7 @@ def __create_a_material(m, name, textures_and_images):
         else:
             sph_texture=textures_and_images[m.sphere_texture_index][0]
             sph_texture[bl.TEXTURE_TYPE]='SPH'
-            bl.material.addTexture(material, sph_texture)
+            addTexture(material, sph_texture)
             material[bl.MATERIAL_SPHERE_MODE]=m.sphere_mode
     elif m.sphere_mode==pmx.MATERIALSPHERE_SPA:
         # SPA
@@ -328,7 +348,7 @@ def __create_a_material(m, name, textures_and_images):
         else:
             spa_texture=textures_and_images[m.sphere_texture_index][0]
             spa_texture[bl.TEXTURE_TYPE]='SPA'
-            bl.material.addTexture(material, spa_texture, True, 'ADD')
+            addTexture(material, spa_texture, True, 'ADD')
 
             material[bl.MATERIAL_SPHERE_MODE]=m.sphere_mode
     else:

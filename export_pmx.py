@@ -16,6 +16,27 @@ else:
 import bpy
 
 
+def eachEnalbeTexturePath(m):
+    for i, slot in enumerate(m.texture_slots):
+        if m.use_textures[i] and slot and slot.texture:
+            texture=slot.texture
+            if  texture.type=="IMAGE":
+                image=texture.image
+                if not image:
+                    continue
+                yield image.filepath
+
+def eachEnalbeTexture(m):
+    for i, slot in enumerate(m.texture_slots):
+        if m.use_textures[i] and slot and slot.texture:
+            texture=slot.texture
+            if  texture.type=="IMAGE":
+                image=texture.image
+                if not image:
+                    continue
+                yield slot.texture
+
+
 def near(x, y, EPSILON=1e-5):
     d=x-y
     return d>=-EPSILON and d<=EPSILON
@@ -177,7 +198,8 @@ def create_pmx(scene, ex, enable_bdef4=True):
             return texture[pos+1:]
     try:
         for m in ex.oneSkinMesh.vertexArray.indexArrays.keys():
-            for path in bl.material.eachEnalbeTexturePath(bl.material.get(m)):
+            for path in eachEnalbeTexturePath(bpy.data.materials[m]):
+
                 textures.add(get_texture_name(path))
     except KeyError as e:
         # no material
@@ -207,7 +229,7 @@ def create_pmx(scene, ex, enable_bdef4=True):
         shared: 1
         not shared: 0
         """
-        for t in bl.material.eachEnalbeTexturePath(m):
+        for t in eachEnalbeTexturePath(m):
             if re.match("""toon\d\d.bmp"""):
                 return 1
         return 0
@@ -219,7 +241,7 @@ def create_pmx(scene, ex, enable_bdef4=True):
         sphere_texture_index=-1
         sphere_mode=pmx.MATERIALSPHERE_NONE
 
-        for t in bl.material.eachEnalbeTexture(m):
+        for t in eachEnalbeTexture(m):
             texture_type=t.get(bl.TEXTURE_TYPE, 'NORMAL')
             texture_path=get_texture_name(bl.texture.getPath(t))
             if texture_type=='NORMAL': 
@@ -248,7 +270,7 @@ def create_pmx(scene, ex, enable_bdef4=True):
     for material_name, indices in ex.oneSkinMesh.vertexArray.each():
         #print('material:', material_name)
         try:
-            m=bl.material.get(material_name)
+            m=bpy.data.materials[material_name]
         except KeyError as e:
             m=exporter.oneskinmesh.DefaultMaterial()
         (
