@@ -418,7 +418,8 @@ class OneSkinMesh(object):
 
                 relativeIndex=len(baseMorph.offsets)
                 for index in vg:
-                    v=bl.shapekey.getByIndex(b, index)
+                    v=b.data[index].co
+
                     pos=[v[0], v[1], v[2]]
 
                     indices=self.vertexArray.getMappedIndex(obj_name, index)
@@ -447,8 +448,9 @@ class OneSkinMesh(object):
             used=set()
             for index, src, dst in zip(
                     range(len(blenderMesh.vertices)),
-                    bl.shapekey.get(basis),
-                    bl.shapekey.get(b)):
+                    (k.co for k in basis.data),
+                    (k.co for k in b.data),
+                    ):
                 offset=[dst[0]-src[0], dst[1]-src[1], dst[2]-src[2]]
                 if offset[0]==0 and offset[1]==0 and offset[2]==0:
                     continue

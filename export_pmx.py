@@ -16,6 +16,12 @@ else:
 import bpy
 
 
+def getTexturePath(t):
+    if  t.type=="IMAGE":
+        image=t.image
+        if image:
+            return image.filepath
+
 def eachEnalbeTexturePath(m):
     for i, slot in enumerate(m.texture_slots):
         if m.use_textures[i] and slot and slot.texture:
@@ -243,7 +249,7 @@ def create_pmx(scene, ex, enable_bdef4=True):
 
         for t in eachEnalbeTexture(m):
             texture_type=t.get(bl.TEXTURE_TYPE, 'NORMAL')
-            texture_path=get_texture_name(bl.texture.getPath(t))
+            texture_path=get_texture_name(getTexturePath(t))
             if texture_type=='NORMAL': 
                 texture_index=texturePathMap[texture_path]
             elif texture_type=='TOON':

@@ -21,6 +21,19 @@ else:
 import bpy
 
 
+def createTexture(path):
+    texture=bpy.data.textures.new(os.path.basename(path), 'IMAGE')
+    texture.use_mipmap=True
+    texture.use_interpolation=True
+    texture.use_alpha=True
+    try:
+        image=bpy.data.images.load(path)
+    except RuntimeError:
+        print('fail to create:', path)
+        image=bpy.data.images.new('Image', width=16, height=16)
+    texture.image=image
+    return texture, image
+
 def addTexture(material, texture, enable=True, blend_type='MULTIPLY'):
     # search free slot
     index=None
@@ -562,7 +575,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         # テクスチャを作る
         texture_dir=os.path.dirname(filepath)
         print(model.textures)
-        textures_and_images=[bl.texture.create(os.path.join(texture_dir, t))
+        textures_and_images=[createTexture(os.path.join(texture_dir, t))
                 for t in model.textures]
         print(textures_and_images)
 
@@ -684,10 +697,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
                 for o in m.offsets:
                     if isinstance(o, pmx.VertexMorphOffset):
                         # vertex morph
-                        bl.shapekey.assign(new_shape_key, 
-                                o.vertex_index, 
-                                mesh.vertices[o.vertex_index].co+
-                                bl.createVector(*convert_coord(o.position_offset)))
+                        new_shape_key.data[o.vertex_index].co=mesh.vertices[o.vertex_index].co+bl.createVector(*convert_coord(o.position_offset))
                     else:
                         print("unknown morph type: %s. drop" % o)
                         #raise Exception("unknown morph type: %s" % o)

@@ -128,46 +128,6 @@ class modifier:
         return m.object
 
 
-class shapekey:
-    @staticmethod
-    def assign(shapeKey, index, pos):
-        shapeKey.data[index].co=pos
-
-    @staticmethod
-    def getByIndex(b, index):
-        return b.data[index].co
-
-    @staticmethod
-    def get(b):
-        for k in b.data:
-            yield k.co
-
-
-class texture:
-    @staticmethod
-    def create(path):
-        texture=bpy.data.textures.new(os.path.basename(path), 'IMAGE')
-        texture.use_mipmap=True
-        texture.use_interpolation=True
-        texture.use_alpha=True
-        try:
-            image=bpy.data.images.load(path)
-        except RuntimeError:
-            print('fail to create:', path)
-            image=bpy.data.images.new('Image', width=16, height=16)
-        texture.image=image
-        return texture, image
-
-    @staticmethod
-    def getPath(t):
-        if  t.type=="IMAGE":
-            image=t.image
-            if image:
-                return image.filepath
-
-
-
-
 """
 custom property keys
 """
