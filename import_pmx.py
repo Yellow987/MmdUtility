@@ -646,7 +646,9 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         ####################
         if armature_object:
             # armature modifirer
-            bl.modifier.addArmature(mesh_object, armature_object)
+            mod=mesh_object.modifiers.new("Modifier", "ARMATURE")
+            mod.object = armature_object
+            mod.use_bone_envelopes=False
             for i, (v,  mvert) in enumerate(zip(model.vertices, mesh.vertices)):
                 mvert.normal=mathutils.Vector(convert_coord(v.normal))
                 if isinstance(v.deform, pmx.Bdef1):

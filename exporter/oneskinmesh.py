@@ -83,8 +83,8 @@ class OneSkinMesh(object):
         # search armature modifier
         ############################################################
         for m in node.o.modifiers:
-            if bl.modifier.isType(m, 'ARMATURE'):
-                armatureObj=bl.modifier.getArmatureObject(m)
+            if m.type=='ARMATURE':
+                armatureObj=m.object
                 if not self.armatureObj:
                     self.armatureObj=armatureObj
                 elif self.armatureObj!=armatureObj:

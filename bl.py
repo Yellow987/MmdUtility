@@ -102,32 +102,6 @@ class object:
         return g
 
 
-class modifier:
-    @staticmethod
-    def addMirror(mesh_object):
-        return mesh_object.modifiers.new("Modifier", "MIRROR")
-
-    @staticmethod
-    def addArmature(mesh_object, armature_object):
-        mod=mesh_object.modifiers.new("Modifier", "ARMATURE")
-        mod.object = armature_object
-        mod.use_bone_envelopes=False
-
-    @staticmethod
-    def hasType(mesh_object, type_name):
-        for mod in mesh_object.modifiers:
-                if mod.type==type_name.upper():
-                    return True
-
-    @staticmethod
-    def isType(m, type_name):
-        return m.type==type_name.upper()
-
-    @staticmethod
-    def getArmatureObject(m):
-        return m.object
-
-
 """
 custom property keys
 """
