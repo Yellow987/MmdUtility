@@ -1,14 +1,6 @@
 # coding: utf-8
 import os
 import sys
-import time
-import functools
-
-try:
-    import bpy
-    import mathutils
-except:
-    pass
 
 
 FS_ENCODING=sys.getfilesystemencoding()
@@ -16,11 +8,6 @@ if os.path.exists(os.path.dirname(sys.argv[0])+"/utf8"):
     INTERNAL_ENCODING='utf-8'
 else:
     INTERNAL_ENCODING=FS_ENCODING
-
-
-def createVector(x, y, z):
-    return mathutils.Vector([x, y, z])
-
 
 
 """

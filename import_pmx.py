@@ -170,7 +170,10 @@ def convert_coord(pos):
     return (pos.x, pos.z, pos.y)
 
 def VtoV(v):
-    return bl.createVector(v.x, v.y, v.z)
+    return createVector(v.x, v.y, v.z)
+def createVector(x, y, z):
+    return mathutils.Vector([x, y, z])
+
 
 def trim_by_utf8_21byte(src):
     len_list=[len(src[:i].encode('utf-8')) for i in range(1, len(src)+1, 1)]
@@ -409,21 +412,21 @@ def __create_armature(scene, bones, display_slots):
         bone=armature.edit_bones.new(b.name)
         bone[bl.BONE_ENGLISH_NAME]=b.english_name
         # bone position
-        bone.head=bl.createVector(*convert_coord(b.position))
+        bone.head=createVector(*convert_coord(b.position))
         if b.getConnectionFlag():
             # dummy tail
-            bone.tail=bone.head+bl.createVector(0, 1, 0)
+            bone.tail=bone.head+createVector(0, 1, 0)
         else:
             # offset tail
-            bone.tail=bone.head+bl.createVector(
+            bone.tail=bone.head+createVector(
                     *convert_coord(b.tail_position))
             if bone.tail==bone.head:
                 # 捻りボーン
-                bone.tail=bone.head+bl.createVector(0, 0.01, 0)
+                bone.tail=bone.head+createVector(0, 0.01, 0)
             pass
         if not b.getVisibleFlag():
             # dummy tail
-            bone.tail=bone.head+bl.createVector(0, 0.01, 0)
+            bone.tail=bone.head+createVector(0, 0.01, 0)
         return bone
     bl_bones=[create_bone(b) for b in bones]
 
@@ -722,7 +725,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
                 for o in m.offsets:
                     if isinstance(o, pmx.VertexMorphOffset):
                         # vertex morph
-                        new_shape_key.data[o.vertex_index].co=mesh.vertices[o.vertex_index].co+bl.createVector(*convert_coord(o.position_offset))
+                        new_shape_key.data[o.vertex_index].co=mesh.vertices[o.vertex_index].co+createVector(*convert_coord(o.position_offset))
                     else:
                         print("unknown morph type: %s. drop" % o)
                         #raise Exception("unknown morph type: %s" % o)
