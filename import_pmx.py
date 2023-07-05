@@ -132,11 +132,11 @@ def addCopyRotation(pose_bone, target_object, target_bone, factor):
     c.owner_space = "LOCAL"
 
 
-def convert_coord(pos):
+def convert_coord(pos, scale=1.0):
     """
     Left handed y-up to Right handed z-up
     """
-    return (pos.x, pos.z, pos.y)
+    return (pos.x * scale, pos.z * scale, pos.y * scale)
 
 
 def VtoV(v):
@@ -581,6 +581,7 @@ def import_pmx_model(
     import_mesh: bool,
     import_armature: bool,
     import_physics: bool,
+    scale: float,
     **kwargs
 ) -> bool:
     if not model:
@@ -615,10 +616,6 @@ def import_pmx_model(
         ]
         print(textures_and_images)
 
-        # 頂点配列。(Left handed y-up) to (Right handed z-up)
-        vertices = [convert_coord(pos) for pos in (v.position for v in model.vertices)]
-        normals = [convert_coord(nom) for nom in (v.normal for v in model.vertices)]
-
         ####################
         # mesh object
         ####################
@@ -635,6 +632,11 @@ def import_pmx_model(
         ####################
         # vertices & faces
         ####################
+        # 頂点配列。(Left handed y-up) to (Right handed z-up)
+        vertices = [
+            convert_coord(pos, scale) for pos in (v.position for v in model.vertices)
+        ]
+        normals = [convert_coord(nom) for nom in (v.normal for v in model.vertices)]
         # flip
         faces = [
             (model.indices[i + 2], model.indices[i + 1], model.indices[i])
@@ -830,9 +832,11 @@ def _execute(scene, filepath, **kwargs) -> bool:
     elif filepath.lower().endswith(".pmx"):
         from .pymeshio.pmx import reader
 
-        return import_pmx_model(
-            scene, filepath, reader.read_from_file(filepath), **kwargs
-        )
+        pmx_model = reader.read_from_file(filepath)
+        if not pmx_model:
+            return False
+
+        return import_pmx_model(scene, filepath, pmx_model, **kwargs)
 
     else:
         print("unknown file type: ", filepath)
@@ -862,6 +866,12 @@ class ImportPmx(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
         name="import physics objects",
         description="import rigid body and constraints",
         default=False,
+    )
+
+    scale: bpy.props.FloatProperty(
+        name="position scaling",
+        description="default is to meter",
+        default=1.63 / 20,
     )
 
     def execute(self, context):
