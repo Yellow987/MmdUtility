@@ -90,54 +90,6 @@ def createMesh(scene, name):
     return mesh, mesh_object
 
 
-def addGeometry(mesh, vertices, faces):
-    from bpy_extras.io_utils import unpack_list, unpack_face_list
-
-    # mesh.vertices.add(len(vertices))
-    # mesh.vertices.foreach_set("co", unpack_list(vertices))
-    # mesh.tessfaces.add(len(faces))
-    # mesh.tessfaces.foreach_set("vertices_raw", unpack_face_list(faces))
-
-    #msh = bpy.data.meshes.new("cubemesh")
-    mesh.from_pydata(vertices, [], faces)
-    mesh.update()
-
-    # mesh.from_pydata(vertices, [], faces)
-    """
-    mesh.add_geometry(len(vertices), 0, len(faces))
-    # add vertex
-    unpackedVertices=[]
-    for v in vertices:
-        unpackedVertices.extend(v)
-    mesh.vertices.foreach_set("co", unpackedVertices)
-    # add face
-    unpackedFaces = []
-    for face in faces:
-        if len(face) == 4:
-            if face[3] == 0:
-                # rotate indices if the 4th is 0
-                face = [face[3], face[0], face[1], face[2]]
-        elif len(face) == 3:
-            if face[2] == 0:
-                # rotate indices if the 3rd is 0
-                face = [face[2], face[0], face[1], 0]
-            else:
-                face.append(0)
-        unpackedFaces.extend(face)
-    mesh.faces.foreach_set("verts_raw", unpackedFaces)
-    """
-    assert len(vertices) == len(mesh.vertices)
-    # assert(len(faces)==len(cls.getFaces(mesh)))
-
-
-def setFaceUV(m, i, face, uv_array, image):
-    uv_face = m.tessface_uv_textures[0].data[i]
-    uv_face.uv = uv_array
-    if image:
-        uv_face.image = image
-        # uv_face.use_image=True
-
-
 def createArmature(scene):
     armature = bpy.data.armatures.new("Armature")
     armature_object = bpy.data.objects.new("Armature", armature)
@@ -622,7 +574,15 @@ def __create_armature(scene, bones, display_slots):
     return armature_object
 
 
-def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwargs):
+def import_pmx_model(
+    scene,
+    filepath: str,
+    model: pmx.Model,
+    import_mesh: bool,
+    import_armature: bool,
+    import_physics: bool,
+    **kwargs
+) -> bool:
     if not model:
         print("fail to load %s" % filepath)
         return False
@@ -631,7 +591,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
     # メッシュをまとめるエンプティオブジェクト
     model_name = model.name
     if len(model_name) == 0:
-        model_name = model.english
+        model_name = model.english_name
         if len(model_name) == 0:
             model_name = os.path.basename(filepath)
 
@@ -641,10 +601,10 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
     root_object[bl.MMD_MB_COMMENT] = model.comment
     root_object[bl.MMD_ENGLISH_COMMENT] = model.english_comment
 
-    # armatureを作る
-    armature_object = __create_armature(scene, model.bones, model.display_slots)
-    if armature_object:
-        armature_object.parent = root_object
+    if import_armature:
+        armature_object = __create_armature(scene, model.bones, model.display_slots)
+        if armature_object:
+            armature_object.parent = root_object
 
     if import_mesh:
         # テクスチャを作る
@@ -657,6 +617,7 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
 
         # 頂点配列。(Left handed y-up) to (Right handed z-up)
         vertices = [convert_coord(pos) for pos in (v.position for v in model.vertices)]
+        normals = [convert_coord(nom) for nom in (v.normal for v in model.vertices)]
 
         ####################
         # mesh object
@@ -675,22 +636,22 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
         # vertices & faces
         ####################
         # flip
-        addGeometry(
-            mesh,
-            vertices,
-            [
-                (model.indices[i + 2], model.indices[i + 1], model.indices[i])
-                for i in range(0, len(model.indices), 3)
-            ],
-        )
+        faces = [
+            (model.indices[i + 2], model.indices[i + 1], model.indices[i])
+            for i in range(0, len(model.indices), 3)
+        ]
+        mesh.from_pydata(vertices, [], faces)
+        mesh.update()
         assert len(model.vertices) == len(mesh.vertices)
-        # mesh.tessface_uv_textures.new()
+        channel_name = "uv0"  # UVのチャンネル名
+        mesh.uv_layers.new(name=channel_name)
 
         ####################
         # material
         ####################
         index_gen = (i for i in model.indices)
-        # face_gen = (pair for pair in enumerate(mesh.tessfaces))
+        face_gen = ((i, pl) for i, pl in enumerate(mesh.polygons))
+        uv_gen = ((i, uv) for i, uv in enumerate(mesh.uv_layers["uv0"].data))
         for i, m in enumerate(model.materials):
             name = get_object_name("{0:02}:", i, m.name)
             material = __create_a_material(m, name, textures_and_images)
@@ -704,28 +665,31 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
             )
 
             # face params
-            # for _ in range(0, m.vertex_count, 3):
-            #     face_index, face = next(face_gen)
-            #     # assign material
-            #     face.material_index = i
-            #     # assign uv
-            #     uv0 = model.vertices[next(index_gen)].uv
-            #     uv1 = model.vertices[next(index_gen)].uv
-            #     uv2 = model.vertices[next(index_gen)].uv
-            #     setFaceUV(
-            #         mesh,
-            #         face_index,
-            #         face,
-            #         [  # fix uv
-            #             (uv2.x, 1.0 - uv2.y),
-            #             (uv1.x, 1.0 - uv1.y),
-            #             (uv0.x, 1.0 - uv0.y),
-            #         ],
-            #         image,
-            #     )
+            for _ in range(0, m.vertex_count, 3):
+                face_index, face = next(face_gen)
+                # assign material
+                face.material_index = i
+                # assign uv
+                i0 = next(index_gen)
+                i1 = next(index_gen)
+                i2 = next(index_gen)
+                uv0 = model.vertices[i0].uv
+                uv1 = model.vertices[i1].uv
+                uv2 = model.vertices[i2].uv
+                _, uv_face = next(uv_gen)
+                uv_face.uv = (uv2.x, 1.0 - uv2.y)
+                _, uv_face = next(uv_gen)
+                uv_face.uv = (uv1.x, 1.0 - uv1.y)
+                _, uv_face = next(uv_gen)
+                uv_face.uv = (uv0.x, 1.0 - uv0.y)
+                # print(uv_face.uv)
+                if image:
+                    uv_face.image = image
+                    uv_face.use_image = True
 
-            #     # set smooth
-            #     face.use_smooth = True
+                # set smooth
+                face.use_smooth = True
+                # mesh.vertices[i0].normal = normals[i0]
 
         # fix mesh
         mesh.update()
@@ -848,29 +812,31 @@ def import_pmx_model(scene, filepath, model, import_mesh, import_physics, **kwar
     return {"FINISHED"}
 
 
-def _execute(scene, filepath, **kwargs):
-    """
-    importer 本体
-    """
+def _execute(scene, filepath, **kwargs) -> bool:
     if filepath.lower().endswith(".pmd"):
         from .pymeshio.pmd import reader
 
         pmd_model = reader.read_from_file(filepath)
         if not pmd_model:
-            return
+            return False
 
         print("convert pmd to pmx...")
         from .pymeshio import converter
 
-        import_pmx_model(scene, filepath, converter.pmd_to_pmx(pmd_model), **kwargs)
+        return import_pmx_model(
+            scene, filepath, converter.pmd_to_pmx(pmd_model), **kwargs
+        )
 
     elif filepath.lower().endswith(".pmx"):
         from .pymeshio.pmx import reader
 
-        import_pmx_model(scene, filepath, reader.read_from_file(filepath), **kwargs)
+        return import_pmx_model(
+            scene, filepath, reader.read_from_file(filepath), **kwargs
+        )
 
     else:
         print("unknown file type: ", filepath)
+        return False
 
 
 class ImportPmx(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
@@ -882,13 +848,14 @@ class ImportPmx(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
     filename_ext = ".pmx;.pmd"
     filter_glob = bpy.props.StringProperty(default="*.pmx;*.pmd", options={"HIDDEN"})
 
-    # use_englishmap=bpy.props.BoolProperty(
-    #        name='use english map',
-    #        description='Convert name to english(not implemented)',
-    #        default=False)
-
     import_mesh: bpy.props.BoolProperty(
         name="import mesh", description="import polygon mesh", default=True
+    )
+
+    import_armature: bpy.props.BoolProperty(
+        name="import skinning",
+        description="import armature and bone weight",
+        default=False,
     )
 
     import_physics: bpy.props.BoolProperty(
@@ -898,9 +865,10 @@ class ImportPmx(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
     )
 
     def execute(self, context):
-        _execute(context.scene, **self.as_keywords(ignore=("filter_glob",)))
-        # context.scene.update()
-        return {"FINISHED"}
+        if _execute(context.scene, **self.as_keywords(ignore=("filter_glob",))):
+            return {"FINISHED"}
+        else:
+            return {"CANCELLED"}
 
 
 def menu_func(self, context):
