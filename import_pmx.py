@@ -1,26 +1,19 @@
 # coding: utf-8
 """
-PMXモデルをインポートする。
-
-1マテリアル、1オブジェクトで作成する。
 PMDはPMXに変換してからインポートする。
 """
-
 from .pymeshio import pmx
-
-import bpy_extras
-import mathutils
 import os
-
-print("imported modules: " + __name__)
+import bpy  # type: ignore
+import mathutils  # type: ignore
 
 if "bpy" in locals():
-    import imp
+    import importlib
 
-    imp.reload(bl)
-else:
-    from . import bl
-import bpy
+    importlib.reload(bl)  # type: ignore
+
+
+from . import bl
 
 
 def createEmpty(scene, name):
@@ -95,10 +88,9 @@ def createArmature(scene):
     armature_object = bpy.data.objects.new("Armature", armature)
     scene.collection.objects.link(armature_object)
 
-    # armature_object.show_x_ray = True
+    armature_object.show_in_front = True
     # armature.show_names = True
-    # armature.draw_type='OCTAHEDRAL'
-    # armature.draw_type = "STICK"
+    armature.display_type = "STICK"
     # armature.use_deform_envelopes=False
     # armature.use_deform_vertex_groups=True
     # armature.use_mirror_x=True
@@ -402,7 +394,7 @@ def __create_a_material(m, name, textures_and_images):
     return material
 
 
-def __create_armature(scene, bones, display_slots):
+def __create_armature(scene, bones, display_slots, scale: float):
     """
     :Params:
         bones
@@ -435,6 +427,10 @@ def __create_armature(scene, bones, display_slots):
         if not b.getVisibleFlag():
             # dummy tail
             bone.tail = bone.head + createVector(0, 0.01, 0)
+        
+        bone.head *= scale
+        bone.tail *= scale
+
         return bone
 
     bl_bones = [create_bone(b) for b in bones]
@@ -579,7 +575,6 @@ def import_pmx_model(
     filepath: str,
     model: pmx.Model,
     import_mesh: bool,
-    import_armature: bool,
     import_physics: bool,
     scale: float,
     **kwargs
@@ -602,10 +597,9 @@ def import_pmx_model(
     root_object[bl.MMD_MB_COMMENT] = model.comment
     root_object[bl.MMD_ENGLISH_COMMENT] = model.english_comment
 
-    if import_armature:
-        armature_object = __create_armature(scene, model.bones, model.display_slots)
-        if armature_object:
-            armature_object.parent = root_object
+    armature_object = __create_armature(scene, model.bones, model.display_slots, scale)
+    if armature_object:
+        armature_object.parent = root_object
 
     if import_mesh:
         # テクスチャを作る
@@ -854,12 +848,6 @@ class ImportPmx(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
 
     import_mesh: bpy.props.BoolProperty(
         name="import mesh", description="import polygon mesh", default=True
-    )
-
-    import_armature: bpy.props.BoolProperty(
-        name="import skinning",
-        description="import armature and bone weight",
-        default=False,
     )
 
     import_physics: bpy.props.BoolProperty(
