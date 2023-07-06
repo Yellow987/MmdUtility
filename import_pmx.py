@@ -24,7 +24,7 @@ def createEmpty(scene, name):
 
 def assignVertexGroup(o, name, index, weight):
     if name not in o.vertex_groups:
-        o.vertex_groups.new(name)
+        o.vertex_groups.new(name=name)
     o.vertex_groups[name].add([index], weight, "ADD")
 
 
@@ -427,7 +427,7 @@ def __create_armature(scene, bones, display_slots, scale: float):
         if not b.getVisibleFlag():
             # dummy tail
             bone.tail = bone.head + createVector(0, 0.01, 0)
-        
+
         bone.head *= scale
         bone.tail *= scale
 
@@ -693,71 +693,69 @@ def import_pmx_model(
         ####################
         # armature
         ####################
-        # if armature_object:
-        #     # armature modifirer
-        #     mod = mesh_object.modifiers.new("Modifier", "ARMATURE")
-        #     mod.object = armature_object
-        #     mod.use_bone_envelopes = False
-        #     for i, (v, mvert) in enumerate(zip(model.vertices, mesh.vertices)):
-        #         mvert.normal = mathutils.Vector(convert_coord(v.normal))
-        #         if isinstance(v.deform, pmx.Bdef1):
-        #             assignVertexGroup(
-        #                 mesh_object, model.bones[v.deform.index0].name, i, 1.0
-        #             )
-        #         elif isinstance(v.deform, pmx.Bdef2):
-        #             assignVertexGroup(
-        #                 mesh_object,
-        #                 model.bones[v.deform.index0].name,
-        #                 i,
-        #                 v.deform.weight0,
-        #             )
-        #             assignVertexGroup(
-        #                 mesh_object,
-        #                 model.bones[v.deform.index1].name,
-        #                 i,
-        #                 1.0 - v.deform.weight0,
-        #             )
-        #         elif isinstance(v.deform, pmx.Bdef4):
-        #             assignVertexGroup(
-        #                 mesh_object,
-        #                 model.bones[v.deform.index0].name,
-        #                 i,
-        #                 v.deform.weight0,
-        #             )
-        #             assignVertexGroup(
-        #                 mesh_object,
-        #                 model.bones[v.deform.index1].name,
-        #                 i,
-        #                 v.deform.weight1,
-        #             )
-        #             assignVertexGroup(
-        #                 mesh_object,
-        #                 model.bones[v.deform.index2].name,
-        #                 i,
-        #                 v.deform.weight2,
-        #             )
-        #             assignVertexGroup(
-        #                 mesh_object,
-        #                 model.bones[v.deform.index3].name,
-        #                 i,
-        #                 v.deform.weight3,
-        #             )
-        #         elif isinstance(v.deform, pmx.Sdef):
-        #             # fail safe
-        #             assignVertexGroup(
-        #                 mesh_object,
-        #                 model.bones[v.deform.index0].name,
-        #                 i,
-        #                 v.deform.weight0,
-        #             )
-        #             assignVertexGroup(
-        #                 mesh_object,
-        #                 model.bones[v.deform.index1].name,
-        #                 i,
-        #                 1.0 - v.deform.weight0,
-        #             )
-        #         else:
-        #             raise Exception("unknown deform: %s" % v.deform)
+        # armature modifirer
+        mod = mesh_object.modifiers.new("Modifier", "ARMATURE")
+        mod.object = armature_object
+        mod.use_bone_envelopes = False
+        for i, (v, mvert) in enumerate(zip(model.vertices, mesh.vertices)):
+            if isinstance(v.deform, pmx.Bdef1):
+                assignVertexGroup(
+                    mesh_object, model.bones[v.deform.index0].name, i, 1.0
+                )
+            elif isinstance(v.deform, pmx.Bdef2):
+                assignVertexGroup(
+                    mesh_object,
+                    model.bones[v.deform.index0].name,
+                    i,
+                    v.deform.weight0,
+                )
+                assignVertexGroup(
+                    mesh_object,
+                    model.bones[v.deform.index1].name,
+                    i,
+                    1.0 - v.deform.weight0,
+                )
+            elif isinstance(v.deform, pmx.Bdef4):
+                assignVertexGroup(
+                    mesh_object,
+                    model.bones[v.deform.index0].name,
+                    i,
+                    v.deform.weight0,
+                )
+                assignVertexGroup(
+                    mesh_object,
+                    model.bones[v.deform.index1].name,
+                    i,
+                    v.deform.weight1,
+                )
+                assignVertexGroup(
+                    mesh_object,
+                    model.bones[v.deform.index2].name,
+                    i,
+                    v.deform.weight2,
+                )
+                assignVertexGroup(
+                    mesh_object,
+                    model.bones[v.deform.index3].name,
+                    i,
+                    v.deform.weight3,
+                )
+            elif isinstance(v.deform, pmx.Sdef):
+                # fail safe
+                assignVertexGroup(
+                    mesh_object,
+                    model.bones[v.deform.index0].name,
+                    i,
+                    v.deform.weight0,
+                )
+                assignVertexGroup(
+                    mesh_object,
+                    model.bones[v.deform.index1].name,
+                    i,
+                    1.0 - v.deform.weight0,
+                )
+            else:
+                raise Exception("unknown deform: %s" % v.deform)
 
         ####################
         # shape keys
@@ -805,7 +803,7 @@ def import_pmx_model(
     # root_object = True
     bpy.context.view_layer.objects.active = root_object
 
-    return {"FINISHED"}
+    return True
 
 
 def _execute(scene, filepath, **kwargs) -> bool:
