@@ -11,15 +11,9 @@ if "bpy" in locals():
     importlib.reload(bl)  # type: ignore
 
 import bpy  # type: ignore
-import bpy_extras # type: ignore
+import bpy_extras  # type: ignore
 import mathutils  # type: ignore
 from . import bl
-
-
-def createEmpty(scene, name):
-    empty = bpy.data.objects.new(name, None)
-    scene.collection.objects.link(empty)
-    return empty
 
 
 def assignVertexGroup(o, name, index, weight):
@@ -76,16 +70,16 @@ def addTexture(material, texture, enable=True, blend_type="MULTIPLY"):
     return index
 
 
-def createMesh(scene, name):
+def createMesh(scene, name: str):
     mesh = bpy.data.meshes.new("Mesh")
     mesh_object = bpy.data.objects.new(name, mesh)
     scene.collection.objects.link(mesh_object)
     return mesh, mesh_object
 
 
-def createArmature(scene):
-    armature = bpy.data.armatures.new("Armature")
-    armature_object = bpy.data.objects.new("Armature", armature)
+def createArmature(scene, name: str):
+    armature = bpy.data.armatures.new("PmxArmature")
+    armature_object = bpy.data.objects.new(name, armature)
     scene.collection.objects.link(armature_object)
 
     armature_object.show_in_front = True
@@ -394,13 +388,13 @@ def __create_a_material(m, name, textures_and_images):
     return material
 
 
-def __create_armature(scene, bones, display_slots, scale: float):
+def __create_armature(scene, name: str, bones, display_slots, scale: float):
     """
     :Params:
         bones
             list of pymeshio.pmx.Bone
     """
-    armature, armature_object = createArmature(scene)
+    armature, armature_object = createArmature(scene, name)
 
     # numbering
     for i, b in enumerate(bones):
@@ -591,15 +585,13 @@ def import_pmx_model(
         if len(model_name) == 0:
             model_name = os.path.basename(filepath)
 
-    root_object = createEmpty(scene, trim_by_utf8_21byte(model_name))
-    root_object[bl.MMD_MB_NAME] = model.name
-    root_object[bl.MMD_ENGLISH_NAME] = model.english_name
-    root_object[bl.MMD_MB_COMMENT] = model.comment
-    root_object[bl.MMD_ENGLISH_COMMENT] = model.english_comment
-
-    armature_object = __create_armature(scene, model.bones, model.display_slots, scale)
-    if armature_object:
-        armature_object.parent = root_object
+    armature_object = __create_armature(
+        scene, model_name, model.bones, model.display_slots, scale
+    )
+    armature_object[bl.MMD_MB_NAME] = model.name
+    armature_object[bl.MMD_ENGLISH_NAME] = model.english_name
+    armature_object[bl.MMD_MB_COMMENT] = model.comment
+    armature_object[bl.MMD_ENGLISH_COMMENT] = model.english_comment
 
     if import_mesh:
         # テクスチャを作る
@@ -621,7 +613,7 @@ def import_pmx_model(
         mesh_object.select_set(True)
         bpy.context.view_layer.objects.active = mesh_object
 
-        mesh_object.parent = root_object
+        mesh_object.parent = armature_object
 
         ####################
         # vertices & faces
@@ -793,15 +785,14 @@ def import_pmx_model(
         # import rigid bodies
         rigidbody_object = __importRigidBodies(scene, model.rigidbodies, model.bones)
         if rigidbody_object:
-            rigidbody_object.parent = root_object
+            rigidbody_object.parent = armature_object
 
         # import joints
         joint_object = __import_joints(scene, model.joints, model.rigidbodies)
         if joint_object:
-            joint_object.parent = root_object
+            joint_object.parent = armature_object
 
-    # root_object = True
-    bpy.context.view_layer.objects.active = root_object
+    bpy.context.view_layer.objects.active = armature_object
 
     return True
 
