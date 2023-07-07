@@ -4,15 +4,15 @@ PMDはPMXに変換してからインポートする。
 """
 from .pymeshio import pmx
 import os
-import bpy  # type: ignore
-import mathutils  # type: ignore
 
 if "bpy" in locals():
     import importlib
 
     importlib.reload(bl)  # type: ignore
 
-
+import bpy  # type: ignore
+import bpy_extras # type: ignore
+import mathutils  # type: ignore
 from . import bl
 
 
