@@ -16,6 +16,8 @@ import bpy_extras  # type: ignore
 import mathutils  # type: ignore
 from . import bl
 
+UV_NAME = "uv0"
+
 
 def assignVertexGroup(o, name, index, weight):
     if name not in o.vertex_groups:
@@ -45,7 +47,10 @@ def createTexture(path: str) -> Tuple[bpy.types.Texture, bpy.types.Image]:
     try:
         image = bpy.data.images.load(path)
     except RuntimeError:
-        print("fail to load. create fallback empty:", path)
+        if os.path.exists(path):
+            print("fail to load. create fallback empty:", path)
+        else:
+            print("file not found:", path)
         image = bpy.data.images.new("Image", width=16, height=16)
     texture.image = image
     return texture, image
@@ -585,7 +590,7 @@ def import_pmx_model(
         textures_and_images = [
             createTexture(os.path.join(texture_dir, t)) for t in model.textures
         ]
-        print(textures_and_images)
+        # print(textures_and_images)
 
         ####################
         # mesh object
@@ -614,7 +619,7 @@ def import_pmx_model(
         vertices = [
             convert_coord(pos, scale) for pos in (v.position for v in model.vertices)
         ]
-        normals = [convert_coord(nom) for nom in (v.normal for v in model.vertices)]
+        # normals = [convert_coord(nom) for nom in (v.normal for v in model.vertices)]
         # flip
         faces = [
             (model.indices[i + 2], model.indices[i + 1], model.indices[i])
@@ -623,15 +628,14 @@ def import_pmx_model(
         mesh.from_pydata(vertices, [], faces)
         mesh.update()
         assert len(model.vertices) == len(mesh.vertices)
-        channel_name = "uv0"  # UVのチャンネル名
-        mesh.uv_layers.new(name=channel_name)
+        mesh.uv_layers.new(name=UV_NAME)
 
         ####################
         # material
         ####################
         index_gen = (i for i in model.indices)
         face_gen = ((i, pl) for i, pl in enumerate(mesh.polygons))
-        uv_gen = ((i, uv) for i, uv in enumerate(mesh.uv_layers["uv0"].data))
+        uv_gen = ((i, uv) for i, uv in enumerate(mesh.uv_layers[UV_NAME].data))
         for i, m in enumerate(model.materials):
             name = get_object_name("{0:02}:", i, m.name)
             material = __create_a_material(m, name, textures_and_images)
