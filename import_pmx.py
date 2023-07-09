@@ -2,6 +2,7 @@
 """
 PMDはPMXに変換してからインポートする。
 """
+from typing import Tuple, Optional
 from .pymeshio import pmx
 import os
 
@@ -22,7 +23,7 @@ def assignVertexGroup(o, name, index, weight):
     o.vertex_groups[name].add([index], weight, "ADD")
 
 
-def createBoneGroup(scene, o, name, color_set="DEFAULT"):
+def createBoneGroup(o: bpy.types.Object, name: str, color_set="DEFAULT"):
     # create group
     o.select_set(True)
     bpy.context.view_layer.objects.active = o
@@ -36,7 +37,7 @@ def createBoneGroup(scene, o, name, color_set="DEFAULT"):
     return g
 
 
-def createTexture(path):
+def createTexture(path: str) -> Tuple[bpy.types.Texture, bpy.types.Image]:
     texture = bpy.data.textures.new(os.path.basename(path), "IMAGE")
     texture.use_mipmap = True
     texture.use_interpolation = True
@@ -44,7 +45,7 @@ def createTexture(path):
     try:
         image = bpy.data.images.load(path)
     except RuntimeError:
-        print("fail to create:", path)
+        print("fail to load. create fallback empty:", path)
         image = bpy.data.images.new("Image", width=16, height=16)
     texture.image = image
     return texture, image
@@ -70,29 +71,7 @@ def addTexture(material, texture, enable=True, blend_type="MULTIPLY"):
     return index
 
 
-def createMesh(scene, name: str):
-    mesh = bpy.data.meshes.new("Mesh")
-    mesh_object = bpy.data.objects.new(name, mesh)
-    scene.collection.objects.link(mesh_object)
-    return mesh, mesh_object
-
-
-def createArmature(scene, name: str):
-    armature = bpy.data.armatures.new("PmxArmature")
-    armature_object = bpy.data.objects.new(name, armature)
-    scene.collection.objects.link(armature_object)
-
-    armature_object.show_in_front = True
-    # armature.show_names = True
-    armature.display_type = "STICK"
-    # armature.use_deform_envelopes=False
-    # armature.use_deform_vertex_groups=True
-    # armature.use_mirror_x=True
-
-    return armature, armature_object
-
-
-def makeEditable(scene, armature_object):
+def makeEditable(armature_object):
     # select only armature object and set edit mode
     bpy.context.view_layer.objects.active = armature_object
     bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
@@ -163,9 +142,9 @@ def get_object_name(fmt, index, name):
     """
 
 
-def __import_joints(scene, joints, rigidbodies):
+def __import_joints(joints, rigidbodies) -> bpy.types.Collection:
     print("create joints")
-    container = createEmpty(scene, "Joints")
+    container = bpy.data.collections.new("Joints")
     layers = [
         True,
         False,
@@ -200,7 +179,7 @@ def __import_joints(scene, joints, rigidbodies):
             location=(c.position.x, c.position.z, c.position.y),
             layers=layers,
         )
-        meshObject = scene.objects.active
+        meshObject = bpy.context.active_object
         constraintMeshes.append(meshObject)
         mesh = meshObject.data
         mesh.materials.append(material)
@@ -222,15 +201,15 @@ def __import_joints(scene, joints, rigidbodies):
         meshObject[bl.CONSTRAINT_SPRING_ROT] = VtoV(c.spring_constant_rotation)
 
     for meshObject in reversed(constraintMeshes):
-        meshObject.parent = container
+        container.objects.link(meshObject)
 
     return container
 
 
-def __importRigidBodies(scene, rigidbodies, bones):
+def __importRigidBodies(rigidbodies, bones) -> bpy.types.Collection:
     print("create rigid bodies")
 
-    container = createEmpty(scene, "RigidBodies")
+    container = bpy.data.collections.new("RigidBodies")
     layers = [
         True,
         False,
@@ -282,7 +261,7 @@ def __importRigidBodies(scene, rigidbodies, bones):
         else:
             assert False
 
-        meshObject = scene.objects.active
+        meshObject = bpy.context.active_object
         mesh = meshObject.data
         rigidMeshes.append(meshObject)
         mesh.materials.append(material)
@@ -306,7 +285,7 @@ def __importRigidBodies(scene, rigidbodies, bones):
         meshObject[bl.RIGID_FRICTION] = rigid.param.friction
 
     for meshObject in reversed(rigidMeshes):
-        meshObject.parent = container
+        container.objects.link(meshObject)
 
     return container
 
@@ -388,20 +367,26 @@ def __create_a_material(m, name, textures_and_images):
     return material
 
 
-def __create_armature(scene, name: str, bones, display_slots, scale: float):
+def __create_armature(
+    collection: bpy.types.Collection, name: str, bones, display_slots, scale: float
+) -> bpy.types.Object:
     """
     :Params:
         bones
             list of pymeshio.pmx.Bone
     """
-    armature, armature_object = createArmature(scene, name)
+    armature = bpy.data.armatures.new("PmxArmature")
+    armature_object = bpy.data.objects.new(name, armature)
+    collection.objects.link(armature_object)
+    armature_object.show_in_front = True
+    armature.display_type = "STICK"
 
     # numbering
     for i, b in enumerate(bones):
         b.index = i
 
     # create bones
-    makeEditable(scene, armature_object)
+    makeEditable(armature_object)
 
     def create_bone(b):
         bone = armature.edit_bones.new(b.name)
@@ -532,15 +517,14 @@ def __create_armature(scene, name: str, bones, display_slots, scale: float):
             # translatation lock
             p_bone.lock_location = (True, True, True)
 
-    makeEditable(scene, armature_object)
+    makeEditable(armature_object)
 
     # create bone group
     bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
     pose = armature_object.pose
-    bone_groups = {}
     for i, ds in enumerate(display_slots):
         # print(ds)
-        g = createBoneGroup(scene, armature_object, ds.name, "THEME%02d" % (i + 1))
+        g = createBoneGroup(armature_object, ds.name, "THEME%02d" % (i + 1))
         for t, index in ds.references:
             if t == 0:
                 name = bones[index].name
@@ -565,28 +549,29 @@ def __create_armature(scene, name: str, bones, display_slots, scale: float):
 
 
 def import_pmx_model(
-    scene,
+    parent_collection: bpy.types.Collection,
     filepath: str,
     model: pmx.Model,
     import_mesh: bool,
     import_physics: bool,
     scale: float,
-    **kwargs
+    **kwargs,
 ) -> bool:
     if not model:
         print("fail to load %s" % filepath)
         return False
-    print(model)
+    # print(model)
 
-    # メッシュをまとめるエンプティオブジェクト
     model_name = model.name
     if len(model_name) == 0:
         model_name = model.english_name
         if len(model_name) == 0:
             model_name = os.path.basename(filepath)
+    collection = bpy.data.collections.new(model_name)
+    parent_collection.children.link(collection)
 
     armature_object = __create_armature(
-        scene, model_name, model.bones, model.display_slots, scale
+        collection, model_name, model.bones, model.display_slots, scale
     )
     armature_object[bl.MMD_MB_NAME] = model.name
     armature_object[bl.MMD_ENGLISH_NAME] = model.english_name
@@ -596,7 +581,7 @@ def import_pmx_model(
     if import_mesh:
         # テクスチャを作る
         texture_dir = os.path.dirname(filepath)
-        print(model.textures)
+        # print(model.textures)
         textures_and_images = [
             createTexture(os.path.join(texture_dir, t)) for t in model.textures
         ]
@@ -605,15 +590,22 @@ def import_pmx_model(
         ####################
         # mesh object
         ####################
-        # object名はutf-8で21byteまで
-        mesh, mesh_object = createMesh(scene, "mesh")
+        mesh = bpy.data.meshes.new("Mesh")
+        mesh_object = None
+        i = 0
+        while not mesh_object:
+            try:
+                mesh_object = bpy.data.objects.new(f"mesh.{i:03}", mesh)
+                break
+            except:
+                i += 1
+        collection.objects.link(mesh_object)
+
         # activate object
         bpy.ops.object.select_all(action="DESELECT")
 
         mesh_object.select_set(True)
         bpy.context.view_layer.objects.active = mesh_object
-
-        mesh_object.parent = armature_object
 
         ####################
         # vertices & faces
@@ -645,9 +637,17 @@ def import_pmx_model(
             material = __create_a_material(m, name, textures_and_images)
             mesh.materials.append(material)
 
+            def get_or_none(
+                i: int,
+            ) -> Optional[Tuple[bpy.types.Texture, bpy.types.Image]]:
+                try:
+                    return textures_and_images[i]
+                except:
+                    return None
+
             # texture image
             image = (
-                textures_and_images.get[m.texture_index]
+                get_or_none(m.texture_index)
                 if m.texture_index in textures_and_images
                 else None
             )
@@ -783,33 +783,35 @@ def import_pmx_model(
 
     if import_physics:
         # import rigid bodies
-        rigidbody_object = __importRigidBodies(scene, model.rigidbodies, model.bones)
-        if rigidbody_object:
-            rigidbody_object.parent = armature_object
+        rigidbody_collection = __importRigidBodies(model.rigidbodies, model.bones)
+        if rigidbody_collection:
+            collection.objects.link(rigidbody_collection)
 
         # import joints
-        joint_object = __import_joints(scene, model.joints, model.rigidbodies)
-        if joint_object:
-            joint_object.parent = armature_object
+        joint_collection = __import_joints(model.joints, model.rigidbodies)
+        if joint_collection:
+            collection.children.link(joint_collection)
 
     bpy.context.view_layer.objects.active = armature_object
 
     return True
 
 
-def _execute(scene, filepath, **kwargs) -> bool:
+def _execute(
+    collection: bpy.types.Collection, filepath: str, **kwargs
+) -> Optional[bpy.types.Collection]:
     if filepath.lower().endswith(".pmd"):
         from .pymeshio.pmd import reader
 
         pmd_model = reader.read_from_file(filepath)
         if not pmd_model:
-            return False
+            return
 
         print("convert pmd to pmx...")
         from .pymeshio import converter
 
         return import_pmx_model(
-            scene, filepath, converter.pmd_to_pmx(pmd_model), **kwargs
+            collection, filepath, converter.pmd_to_pmx(pmd_model), **kwargs
         )
 
     elif filepath.lower().endswith(".pmx"):
@@ -817,13 +819,13 @@ def _execute(scene, filepath, **kwargs) -> bool:
 
         pmx_model = reader.read_from_file(filepath)
         if not pmx_model:
-            return False
+            return
 
-        return import_pmx_model(scene, filepath, pmx_model, **kwargs)
+        return import_pmx_model(collection, filepath, pmx_model, **kwargs)
 
     else:
         print("unknown file type: ", filepath)
-        return False
+        return
 
 
 class ImportPmx(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
@@ -835,26 +837,30 @@ class ImportPmx(bpy.types.Operator, bpy_extras.io_utils.ImportHelper):
     filename_ext = ".pmx;.pmd"
     filter_glob = bpy.props.StringProperty(default="*.pmx;*.pmd", options={"HIDDEN"})
 
-    import_mesh: bpy.props.BoolProperty(
+    import_mesh: bpy.props.BoolProperty(  # type: ignore
         name="import mesh", description="import polygon mesh", default=True
     )
 
-    import_physics: bpy.props.BoolProperty(
+    import_physics: bpy.props.BoolProperty(  # type: ignore
         name="import physics objects",
         description="import rigid body and constraints",
         default=False,
     )
 
-    scale: bpy.props.FloatProperty(
+    scale: bpy.props.FloatProperty(  # type: ignore
         name="position scaling",
         description="default is to meter",
         default=1.63 / 20,
     )
 
     def execute(self, context):
-        if _execute(context.scene, **self.as_keywords(ignore=("filter_glob",))):
+        try:
+            _execute(
+                context.scene.collection, **self.as_keywords(ignore=("filter_glob",))
+            )
             return {"FINISHED"}
-        else:
+        except Exception as ex:
+            print(ex)
             return {"CANCELLED"}
 
 

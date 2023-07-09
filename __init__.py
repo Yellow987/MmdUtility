@@ -15,10 +15,19 @@ bl_info = {
 if "bpy" in locals():
     import importlib
 
-    importlib.reload(import_pmx)
-    importlib.reload(export_pmx)
+    local_map = locals()
 
-import bpy
+    def reload(module_name: str):
+        module = local_map.get(module_name)
+        if module:
+            importlib.reload(module)
+        else:
+            print(f'{module_name} is not in locals')
+
+    reload("import_pmx")
+    reload("export_pmx")
+
+import bpy  # type: ignore
 from . import import_pmx
 from . import export_pmx
 
@@ -35,4 +44,3 @@ def unregister():
 
 if __name__ == "__main__":
     register()
-
