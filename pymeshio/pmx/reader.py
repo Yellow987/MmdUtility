@@ -64,23 +64,24 @@ class Reader(common.BinaryReader):
             print("unknown text encoding", text_encoding)
 
     def read_vertex(self):
-        vertex = pmx.Vertex(
-                self.read_vector3(), # pos
-                self.read_vector3(), # normal
-                self.read_vector2(), # uv
-                self.read_deform(), # deform(bone weight)
-                self.read_float() # edge factor
-                )
+        # Read the basic vertex data
+        pos = self.read_vector3()  # position
+        normal = self.read_vector3()  # normal
+        uv = self.read_vector2()  # uv
         
-        # Handle Extended UV coordinates (additional UV sets)
+        # Handle Extended UV coordinates BEFORE deform and edge factor
         # PMX format can have up to 4 additional UV coordinates beyond the standard UV
         if hasattr(self, 'extended_uv') and self.extended_uv > 0:
             # Read and discard additional UV coordinates to maintain file pointer alignment
-            # Extended UV coordinates are Vector2 like the main UV coordinate
+            # Extended UV coordinates are Vector4 according to PMX 2.0 spec
             for _ in range(self.extended_uv):
-                self.read_vector2()  # Additional UV coordinates are Vector2
-                
-        return vertex
+                self.read_vector4()  # Additional UV coordinates are Vector4
+        
+        # Continue with remaining vertex data
+        deform = self.read_deform()  # deform(bone weight)
+        edge_factor = self.read_float()  # edge factor
+        
+        return pmx.Vertex(pos, normal, uv, deform, edge_factor)
 
     def read_deform(self):
         deform_type=self.read_int(1)
@@ -453,16 +454,28 @@ def read(ios):
             for _ in range(reader.read_int(4))]
     model.bones=[reader.read_bone() 
             for _ in range(reader.read_int(4))]
-    model.morphs=[reader.read_morgh() 
-            for _ in range(reader.read_int(4))]
-    model.display_slots=[reader.read_display_slot() 
-            for _ in range(reader.read_int(4))]
+    # Handle morphs with error handling for truncated files
+    try:
+        morph_count = reader.read_int(4)
+        model.morphs=[reader.read_morgh()
+                for _ in range(morph_count)]
+    except (common.ParseException, struct.error, Exception):
+        # No morphs section or truncated file
+        model.morphs = []
+    # Handle display slots with error handling for truncated files
+    try:
+        display_slot_count = reader.read_int(4)
+        model.display_slots=[reader.read_display_slot()
+                for _ in range(display_slot_count)]
+    except (common.ParseException, struct.error, Exception):
+        # No display slots section or truncated file
+        model.display_slots = []
     # Handle optional sections that may not exist in all PMX files
     try:
         rigidbody_count = reader.read_int(4)
         model.rigidbodies=[reader.read_rigidbody()
                 for _ in range(rigidbody_count)]
-    except (common.ParseException, struct.error):
+    except (common.ParseException, struct.error, Exception):
         # No rigidbodies section or truncated file
         model.rigidbodies = []
         
@@ -470,7 +483,7 @@ def read(ios):
         joint_count = reader.read_int(4)
         model.joints=[reader.read_joint()
                 for _ in range(joint_count)]
-    except (common.ParseException, struct.error):
+    except (common.ParseException, struct.error, Exception):
         # No joints section or truncated file
         model.joints = []
 
