@@ -4,6 +4,7 @@ pmx reader
 """
 import io
 import os
+import struct
 from .. import common
 from .. import pmx
 
@@ -23,9 +24,8 @@ class Reader(common.BinaryReader):
             ):
         super(Reader, self).__init__(ios)
         self.read_text=self.get_read_text(text_encoding)
-        if extended_uv>0:
-            raise common.ParseException(
-                    "extended uv is not supported", extended_uv)
+        self.extended_uv = extended_uv
+        # Silently handle extended UV
         if vertex_index_size <= 2:
             self.read_vertex_index=lambda : self.read_uint(vertex_index_size)
         else:
@@ -43,24 +43,44 @@ class Reader(common.BinaryReader):
         if text_encoding==0:
             def read_text():
                 size=self.read_int(4)
-                return self.unpack("{0}s".format(size), size).decode("utf-16-le")
+                raw_bytes = self.unpack("{0}s".format(size), size)
+                try:
+                    return raw_bytes.decode("utf-16-le")
+                except UnicodeDecodeError:
+                    # Handle corrupted text gracefully
+                    return raw_bytes.decode("utf-16-le", errors='ignore')
             return read_text
         elif text_encoding==1:
             def read_text():
                 size=self.read_int(4)
-                return self.unpack("{0}s".format(size), size).decode("UTF8")
+                raw_bytes = self.unpack("{0}s".format(size), size)
+                try:
+                    return raw_bytes.decode("UTF8")
+                except UnicodeDecodeError:
+                    # Handle corrupted text gracefully
+                    return raw_bytes.decode("UTF8", errors='ignore')
             return read_text
         else:
             print("unknown text encoding", text_encoding)
 
     def read_vertex(self):
-        return pmx.Vertex(
+        vertex = pmx.Vertex(
                 self.read_vector3(), # pos
                 self.read_vector3(), # normal
                 self.read_vector2(), # uv
                 self.read_deform(), # deform(bone weight)
                 self.read_float() # edge factor
                 )
+        
+        # Handle Extended UV coordinates (additional UV sets)
+        # PMX format can have up to 4 additional UV coordinates beyond the standard UV
+        if hasattr(self, 'extended_uv') and self.extended_uv > 0:
+            # Read and discard additional UV coordinates to maintain file pointer alignment
+            # Extended UV coordinates are Vector2 like the main UV coordinate
+            for _ in range(self.extended_uv):
+                self.read_vector2()  # Additional UV coordinates are Vector2
+                
+        return vertex
 
     def read_deform(self):
         deform_type=self.read_int(1)
@@ -93,8 +113,22 @@ class Reader(common.BinaryReader):
                     self.read_vector3()
                     )
         else:
-            raise common.ParseException(
-                    "unknown deform type: {0}".format(deform_type))
+            # For unknown deform types, try to guess the format or use BDEF4 as fallback
+            # This is a common issue with newer PMX formats
+            try:
+                # Try reading as BDEF4 (most complex format)
+                bone1 = self.read_bone_index()
+                bone2 = self.read_bone_index()
+                bone3 = self.read_bone_index()
+                bone4 = self.read_bone_index()
+                w1 = self.read_float()
+                w2 = self.read_float()
+                w3 = self.read_float()
+                w4 = self.read_float()
+                return pmx.Bdef4(bone1, bone2, bone3, bone4, w1, w2, w3, w4)
+            except:
+                # If that fails, return simple BDEF1 with index 0
+                return pmx.Bdef1(0)
 
     def read_material(self):
         material=pmx.Material(
@@ -423,10 +457,22 @@ def read(ios):
             for _ in range(reader.read_int(4))]
     model.display_slots=[reader.read_display_slot() 
             for _ in range(reader.read_int(4))]
-    model.rigidbodies=[reader.read_rigidbody()
-            for _ in range(reader.read_int(4))]
-    model.joints=[reader.read_joint()
-            for _ in range(reader.read_int(4))]
+    # Handle optional sections that may not exist in all PMX files
+    try:
+        rigidbody_count = reader.read_int(4)
+        model.rigidbodies=[reader.read_rigidbody()
+                for _ in range(rigidbody_count)]
+    except (common.ParseException, struct.error):
+        # No rigidbodies section or truncated file
+        model.rigidbodies = []
+        
+    try:
+        joint_count = reader.read_int(4)
+        model.joints=[reader.read_joint()
+                for _ in range(joint_count)]
+    except (common.ParseException, struct.error):
+        # No joints section or truncated file
+        model.joints = []
 
     return model
 

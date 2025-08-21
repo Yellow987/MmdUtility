@@ -381,8 +381,14 @@ class ParseException(Exception):
     """
     Exception in reader
     """
-    def __init__(self, message):
+    def __init__(self, message, context=None):
         self.message=message
+        self.context=context
+        # Call parent constructor with a combined message
+        if context is not None:
+            super(ParseException, self).__init__(f"{message}: {context}")
+        else:
+            super(ParseException, self).__init__(message)
 
 
 def readall(path):
@@ -412,7 +418,11 @@ class BinaryReader(object):
         #return not self.ios.readable()
 
     def unpack(self, fmt, size):
-        result=struct.unpack(fmt, self.ios.read(size))
+        data = self.ios.read(size)
+        if len(data) < size:
+            # Handle truncated files gracefully
+            raise ParseException(f"Unexpected end of file: tried to read {size} bytes, got {len(data)}")
+        result=struct.unpack(fmt, data)
         return result[0]
 
     def read_int(self, size):
