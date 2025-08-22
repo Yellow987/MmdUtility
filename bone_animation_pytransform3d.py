@@ -232,14 +232,14 @@ def get_bone_world_position_pt3d(pmx_model: pmx.Model, vmd_motion: vmd.Motion,
     for chain_bone_index in bone_chain:
         bone = pmx_model.bones[chain_bone_index]
         
-        # Calculate local position (same logic as numpy version)
+        # Calculate local position correctly for PMX bone hierarchy
         if bone.parent_index == -1:
-            # Root bone - local position equals world position
-            local_pos = bone.position
+            # Root bone - local position equals its world position
+            local_rest_pos = bone.position
         else:
-            # Child bone - local position = bone_world_pos - parent_world_pos
+            # Child bone - PMX positions are absolute, so calculate relative position
             parent_bone = pmx_model.bones[bone.parent_index]
-            local_pos = common.Vector3(
+            local_rest_pos = common.Vector3(
                 bone.position.x - parent_bone.position.x,
                 bone.position.y - parent_bone.position.y,
                 bone.position.z - parent_bone.position.z
@@ -248,27 +248,35 @@ def get_bone_world_position_pt3d(pmx_model: pmx.Model, vmd_motion: vmd.Motion,
         # Get animation data with improved SLERP interpolation
         anim_pos, anim_quat = get_bone_animation_data_slerp(vmd_motion, bone.name, frame_number)
         
-        # Create transformations using pytransform3d functions
+        # Create bone transformation using correct mathematical order:
+        # LocalTransform = Translation(rest) * Rotation(anim_quat) * Translation(anim_pos)
         
-        # 1. Rest translation (local bone position)
-        rest_pos = np.array([local_pos.x, local_pos.y, local_pos.z])
-        rest_transform = transform_from(R=np.eye(3), p=rest_pos)
-        
-        # 2. Rotation from animation quaternion
-        q_array = np.array([anim_quat.w, anim_quat.x, anim_quat.y, anim_quat.z])
-        rotation_matrix = matrix_from_quaternion(q_array)
-        rotation_transform = transform_from(R=rotation_matrix, p=np.zeros(3))
-        
-        # 3. Animation translation
+        # Convert to numpy arrays
+        rest_pos_array = np.array([local_rest_pos.x, local_rest_pos.y, local_rest_pos.z])
         anim_pos_array = np.array([anim_pos.x, anim_pos.y, anim_pos.z])
-        anim_transform = transform_from(R=np.eye(3), p=anim_pos_array)
+        q_array = np.array([anim_quat.w, anim_quat.x, anim_quat.y, anim_quat.z])
         
-        # Combine transformations: Rest * Rotation * Animation
-        # Use pytransform3d's concat function for proper matrix multiplication
-        bone_transform = concat(rest_transform, rotation_transform, anim_transform)
+        # Create rotation matrix from quaternion
+        rotation_matrix = matrix_from_quaternion(q_array)
         
-        # Accumulate transformation
-        world_transform = concat(world_transform, bone_transform)
+        # Apply proper bone transformation order:
+        # 1. Start with rest position
+        # 2. Apply animation rotation around rest position
+        # 3. Add animation translation in rotated coordinate space
+        
+        # Method 1: Use matrix composition (more explicit)
+        # Create individual transformation matrices
+        rest_translation = transform_from(R=np.eye(3), p=rest_pos_array)
+        rotation_transform = transform_from(R=rotation_matrix, p=np.zeros(3))
+        anim_translation = transform_from(R=np.eye(3), p=anim_pos_array)
+        
+        # Combine in correct order: T(rest) * R(anim) * T(anim)
+        temp_transform = concat(rest_translation, rotation_transform)
+        bone_local_transform = concat(temp_transform, anim_translation)
+        
+        # Accumulate with world transformation
+        # Parent transformation is applied first, then local bone transformation
+        world_transform = concat(world_transform, bone_local_transform)
     
     # Extract world position from final transformation matrix
     # The world position is in the translation component

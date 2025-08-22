@@ -103,10 +103,24 @@ def debug_bone_detailed_pt3d(pmx_model, vmd_motion, frame, bone_name):
         anim_transform = transform_from(R=np.eye(3), p=anim_pos_array)
         
         # Combine transformations: Rest * Rotation * Animation
-        bone_transform = concat(rest_transform, rotation_transform, anim_transform)
+        # Note: concat only accepts 2 matrices, so we need sequential concatenation
+        temp_transform = concat(rest_transform, rotation_transform)
+        bone_transform = concat(temp_transform, anim_transform)
+        
+        # Show intermediate steps for debugging
+        temp_after_rest = concat(rest_transform, rotation_transform)
+        temp_after_rotation = concat(temp_after_rest, anim_transform)
+        
+        print(f"      DEBUG - Step by step transformation:")
+        print(f"        After rest: translation = ({temp_after_rest[:3, 3][0]:.3f}, {temp_after_rest[:3, 3][1]:.3f}, {temp_after_rest[:3, 3][2]:.3f})")
+        print(f"        After rotation: translation = ({temp_after_rotation[:3, 3][0]:.3f}, {temp_after_rotation[:3, 3][1]:.3f}, {temp_after_rotation[:3, 3][2]:.3f})")
+        print(f"        Final bone transform: translation = ({bone_transform[:3, 3][0]:.3f}, {bone_transform[:3, 3][1]:.3f}, {bone_transform[:3, 3][2]:.3f})")
         
         # Accumulate transformation
+        prev_world_transform = world_transform.copy()
         world_transform = concat(world_transform, bone_transform)
+        
+        print(f"        Previous world: translation = ({prev_world_transform[:3, 3][0]:.3f}, {prev_world_transform[:3, 3][1]:.3f}, {prev_world_transform[:3, 3][2]:.3f})")
         
         # Extract current world position
         current_world_pos = world_transform[:3, 3]
@@ -140,6 +154,18 @@ def debug_bone_detailed_pt3d(pmx_model, vmd_motion, frame, bone_name):
         print(f"        [[{rotation_transform[1,0]:.3f}, {rotation_transform[1,1]:.3f}, {rotation_transform[1,2]:.3f}, {rotation_transform[1,3]:.3f}]]")
         print(f"        [[{rotation_transform[2,0]:.3f}, {rotation_transform[2,1]:.3f}, {rotation_transform[2,2]:.3f}, {rotation_transform[2,3]:.3f}]]")
         print(f"        [[{rotation_transform[3,0]:.3f}, {rotation_transform[3,1]:.3f}, {rotation_transform[3,2]:.3f}, {rotation_transform[3,3]:.3f}]]")
+        
+        print(f"      Animation transform:")
+        print(f"        [[{anim_transform[0,0]:.3f}, {anim_transform[0,1]:.3f}, {anim_transform[0,2]:.3f}, {anim_transform[0,3]:.3f}]]")
+        print(f"        [[{anim_transform[1,0]:.3f}, {anim_transform[1,1]:.3f}, {anim_transform[1,2]:.3f}, {anim_transform[1,3]:.3f}]]")
+        print(f"        [[{anim_transform[2,0]:.3f}, {anim_transform[2,1]:.3f}, {anim_transform[2,2]:.3f}, {anim_transform[2,3]:.3f}]]")
+        print(f"        [[{anim_transform[3,0]:.3f}, {anim_transform[3,1]:.3f}, {anim_transform[3,2]:.3f}, {anim_transform[3,3]:.3f}]]")
+        
+        print(f"      Combined bone transform:")
+        print(f"        [[{bone_transform[0,0]:.3f}, {bone_transform[0,1]:.3f}, {bone_transform[0,2]:.3f}, {bone_transform[0,3]:.3f}]]")
+        print(f"        [[{bone_transform[1,0]:.3f}, {bone_transform[1,1]:.3f}, {bone_transform[1,2]:.3f}, {bone_transform[1,3]:.3f}]]")
+        print(f"        [[{bone_transform[2,0]:.3f}, {bone_transform[2,1]:.3f}, {bone_transform[2,2]:.3f}, {bone_transform[2,3]:.3f}]]")
+        print(f"        [[{bone_transform[3,0]:.3f}, {bone_transform[3,1]:.3f}, {bone_transform[3,2]:.3f}, {bone_transform[3,3]:.3f}]]")
     
     # Step 4: Get animation data for target bone
     print(f"\n--- Animation Data for '{bone_name}' ---")
