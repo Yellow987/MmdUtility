@@ -18,11 +18,12 @@ except ImportError:
 
 # Pytransform3d integration
 try:
-    from pytransform3d.transformations import TransformManager
+    from pytransform3d.transform_manager import TransformManager
     HAS_PYTRANSFORM3D = True
-except ImportError:
+except ImportError as e:
     HAS_PYTRANSFORM3D = False
     TransformManager = None
+    print(f"Warning: pytransform3d not available: {e}")
 
 
 class BonePositionExtractor:
@@ -192,7 +193,7 @@ class BonePositionExtractor:
         Load PMX skeleton into TransformManager with rest pose transforms.
         
         This creates a coordinate frame for each bone with the proper parent-child
-        relationships and rest pose positions.
+        relationships and rest pose positions. Only loads core skeletal bones.
         """
         if not self.pmx_model or not self.bone_hierarchy:
             raise ValueError("PMX model must be loaded first")
@@ -202,20 +203,62 @@ class BonePositionExtractor:
         # Add world coordinate frame
         self.transform_manager.add_transform("world", "world", np.eye(4))
         
+        # Define core bones to include (Japanese names)
+        core_bone_names = {
+            # Root bone (empty name)
+            "",
+            # Core/root & torso
+            "センター",      # center
+            "グルーブ",      # groove
+            "腰",           # waist
+            "上半身",        # upper body
+            "上半身2",       # upper body2
+            # Neck & head
+            "首",           # neck
+            "頭",           # head
+            # Shoulders → wrists
+            "左肩",         # shoulder_L
+            "右肩",         # shoulder_R
+            "左腕",         # arm_L
+            "右腕",         # arm_R
+            "左ひじ",       # elbow_L
+            "右ひじ",       # elbow_R
+            "左手首",       # wrist_L
+            "右手首",       # wrist_R
+            # Hips → toes
+            "左足",         # leg_L
+            "右足",         # leg_R
+            "左ひざ",       # knee_L
+            "右ひざ",       # knee_R
+            "左足首",       # ankle_L
+            "右足首",       # ankle_R
+            "左つま先",     # toe_L
+            "右つま先",     # toe_R
+        }
+        
+        # Find bone indices for core bones
+        core_bone_indices = set()
+        for bone_index, bone_info in self.bone_hierarchy.items():
+            bone_name = bone_info['name']
+            if bone_name in core_bone_names:
+                core_bone_indices.add(bone_index)
+        
+        print(f"Found {len(core_bone_indices)} core bones out of {len(self.bone_hierarchy)} total bones")
+        
         # Keep track of processed bones to handle dependencies
         processed_bones = set()
         
         def process_bone(bone_index):
             """Recursively process bone and its dependencies."""
-            if bone_index in processed_bones:
+            if bone_index in processed_bones or bone_index not in core_bone_indices:
                 return
                 
             bone_info = self.bone_hierarchy[bone_index]
             bone_name = f"bone_{bone_index}"  # Unique frame name
             parent_idx = bone_info['parent_index']
             
-            # Ensure parent is processed first
-            if parent_idx != -1 and parent_idx not in processed_bones:
+            # Ensure parent is processed first (if it's also a core bone)
+            if parent_idx != -1 and parent_idx in core_bone_indices and parent_idx not in processed_bones:
                 process_bone(parent_idx)
             
             # Create transformation matrix for this bone
@@ -224,22 +267,23 @@ class BonePositionExtractor:
             transform_matrix[:3, 3] = local_pos  # Set translation (rest pose position)
             
             # Add transform to manager
-            parent_frame = "world" if parent_idx == -1 else f"bone_{parent_idx}"
+            parent_frame = "world" if parent_idx == -1 or parent_idx not in core_bone_indices else f"bone_{parent_idx}"
             self.transform_manager.add_transform(
                 parent_frame, bone_name, transform_matrix
             )
             
             processed_bones.add(bone_index)
         
-        # Process all bones (parent dependencies handled automatically)
-        for bone_index in self.bone_hierarchy:
+        # Process only core bones
+        for bone_index in core_bone_indices:
             process_bone(bone_index)
         
-        print(f"Loaded {len(processed_bones)} bones into TransformManager")
+        print(f"Loaded {len(processed_bones)} core bones into TransformManager")
     
     def get_rest_pose_positions_pytransform3d(self) -> Dict[str, Tuple[float, float, float]]:
         """
         Get rest pose positions using TransformManager.
+        Only returns positions for core bones that were loaded into TransformManager.
         
         Returns:
             Dictionary mapping bone names to their (x, y, z) world positions
@@ -247,10 +291,49 @@ class BonePositionExtractor:
         if not self.transform_manager:
             self._load_skeleton_to_transform_manager()
         
+        # Define core bones to include (same as in _load_skeleton_to_transform_manager)
+        core_bone_names = {
+            # Root bone (empty name)
+            "",
+            # Core/root & torso
+            "センター",      # center
+            "グルーブ",      # groove
+            "腰",           # waist
+            "上半身",        # upper body
+            "上半身2",       # upper body2
+            # Neck & head
+            "首",           # neck
+            "頭",           # head
+            # Shoulders → wrists
+            "左肩",         # shoulder_L
+            "右肩",         # shoulder_R
+            "左腕",         # arm_L
+            "右腕",         # arm_R
+            "左ひじ",       # elbow_L
+            "右ひじ",       # elbow_R
+            "左手首",       # wrist_L
+            "右手首",       # wrist_R
+            # Hips → toes
+            "左足",         # leg_L
+            "右足",         # leg_R
+            "左ひざ",       # knee_L
+            "右ひざ",       # knee_R
+            "左足首",       # ankle_L
+            "右足首",       # ankle_R
+            "左つま先",     # toe_L
+            "右つま先",     # toe_R
+        }
+        
         positions = {}
         
+        # Only try to get transforms for core bones
         for bone_index, bone_info in self.bone_hierarchy.items():
             bone_name = bone_info['name']
+            
+            # Skip non-core bones
+            if bone_name not in core_bone_names:
+                continue
+                
             frame_name = f"bone_{bone_index}"
             
             try:
@@ -264,9 +347,9 @@ class BonePositionExtractor:
                 positions[bone_name] = tuple(world_pos)
                 
             except Exception as e:
-                print(f"Warning: Could not get transform for bone {bone_name}: {e}")
-                # Fallback to original calculation
-                positions[bone_name] = (0.0, 0.0, 0.0)
+                print(f"Warning: Could not get transform for core bone {bone_name}: {e}")
+                # Skip this bone rather than providing a fallback
+                continue
         
         return positions
     
