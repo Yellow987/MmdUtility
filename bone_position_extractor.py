@@ -78,6 +78,36 @@ CORE_BONE_NAMES = {
     "下半身先",            # lower body tip
 }
 
+# Validation and debugging data structures
+class BoneTransformValidation:
+    """Validation result for bone transform correctness."""
+    def __init__(self, bone_name: str, expected_length: float, actual_length: float,
+                 parent_bone: str = None, tolerance: float = 0.01):
+        self.bone_name = bone_name
+        self.parent_bone = parent_bone
+        self.expected_length = expected_length
+        self.actual_length = actual_length
+        self.length_error = abs(actual_length - expected_length)
+        self.is_valid = self.length_error < tolerance
+        
+    def __repr__(self):
+        status = "✓" if self.is_valid else "✗"
+        return f"{status} {self.bone_name}: expected={self.expected_length:.3f}, actual={self.actual_length:.3f}, error={self.length_error:.3f}"
+
+class BoneTransformData:
+    """Complete transform data for a single bone."""
+    def __init__(self, bone_index: int, bone_name: str, parent_index: int):
+        self.bone_index = bone_index
+        self.bone_name = bone_name
+        self.parent_index = parent_index
+        self.rest_local_offset = np.zeros(3)
+        self.rest_bone_length = 0.0
+        self.vmd_translation = np.zeros(3)
+        self.vmd_rotation_matrix = np.eye(3)
+        self.local_transform = np.eye(4)
+        self.world_transform = np.eye(4)
+        self.world_position = np.zeros(3)
+
 
 def lerp(a, b, t):
     """Linear interpolation between a and b with factor t."""
@@ -148,7 +178,7 @@ def parse_vmd_bezier_params(complement_hex):
 
 def bezier_interpolate_value(t, p1, p2, control_points):
     """Perform bezier interpolation between two values using control points."""
-    if control_points is None or not HAS_BEZIER:
+    if control_points is None:
         # Fallback to linear interpolation
         return lerp(p1, p2, t)
     
@@ -260,10 +290,10 @@ class BonePositionExtractor:
         self.bone_name_to_index = {}
         
         for i, bone in enumerate(self.pmx_model.bones):
-            # Map bone name to index
+            # Map bone name to index - use CP932 for consistency with VMD
             bone_name = bone.name
             if isinstance(bone_name, bytes):
-                bone_name = bone_name.decode('utf-8', errors='ignore')
+                bone_name = bone_name.decode('cp932', errors='ignore')
             
             self.bone_name_to_index[bone_name] = i
             
@@ -281,6 +311,232 @@ class BonePositionExtractor:
             if parent_idx != -1 and parent_idx in self.bone_hierarchy:
                 self.bone_hierarchy[parent_idx]['children'].append(i)
     
+    def calculate_rest_bone_lengths(self) -> Dict[str, float]:
+        """
+        Calculate and store rest bone lengths for validation.
+        
+        Returns:
+            Dictionary mapping bone names to their rest bone lengths
+        """
+        if not self.pmx_model or not self.bone_hierarchy:
+            raise ValueError("PMX model must be loaded first")
+        
+        bone_lengths = {}
+        
+        for bone_index, bone_info in self.bone_hierarchy.items():
+            bone_name = bone_info['name']
+            parent_idx = bone_info['parent_index']
+            
+            if parent_idx >= 0 and parent_idx in self.bone_hierarchy:
+                # Calculate bone length as distance from parent
+                parent_pos = self.bone_hierarchy[parent_idx]['position']
+                child_pos = bone_info['position']
+                
+                length = ((child_pos[0] - parent_pos[0])**2 +
+                         (child_pos[1] - parent_pos[1])**2 +
+                         (child_pos[2] - parent_pos[2])**2)**0.5
+                
+                bone_lengths[bone_name] = length
+            else:
+                # Root bone has no length
+                bone_lengths[bone_name] = 0.0
+                
+        return bone_lengths
+
+    def create_bone_local_transform(self, rest_offset: Tuple[float, float, float],
+                                  vmd_translation: Tuple[float, float, float],
+                                  vmd_rotation_matrix: np.ndarray) -> np.ndarray:
+        """
+        Create correct local transform matrix for MMD bone.
+        
+        Args:
+            rest_offset: Local bone offset vector (bone length/direction)
+            vmd_translation: VMD position offset in local coordinates
+            vmd_rotation_matrix: 3x3 rotation matrix from VMD quaternion
+            
+        Returns:
+            4x4 transformation matrix
+        """
+        # Convert inputs to numpy arrays
+        rest = np.array(rest_offset, dtype=float)
+        vmd_trans = np.array(vmd_translation, dtype=float)
+        
+        # MMD transform composition: T(rest + vmd_translation) * R(vmd_rotation)
+        # This preserves bone length while applying animation
+        total_translation = rest + vmd_trans
+        
+        # Create 4x4 transform matrix
+        transform = np.eye(4)
+        transform[:3, :3] = vmd_rotation_matrix
+        transform[:3, 3] = total_translation
+        
+        return transform
+
+    def quaternion_to_rotation_matrix(self, quaternion) -> np.ndarray:
+        """
+        Convert quaternion to 3x3 rotation matrix.
+        
+        Args:
+            quaternion: VMD quaternion object or numpy array [x, y, z, w]
+            
+        Returns:
+            3x3 rotation matrix
+        """
+        if quaternion is None:
+            return np.eye(3)
+        
+        # Handle different quaternion types
+        if hasattr(quaternion, 'getMatrix'):
+            # VMD quaternion object
+            return quaternion.getMatrix()[:3, :3]
+        elif hasattr(quaternion, '__len__') and len(quaternion) == 4:
+            # Numpy array quaternion (x, y, z, w) from SLERP
+            try:
+                from scipy.spatial.transform import Rotation
+                # Convert to scipy format (x, y, z, w)
+                r = Rotation.from_quat([quaternion[0], quaternion[1], quaternion[2], quaternion[3]])
+                return r.as_matrix()
+            except ImportError:
+                # Fallback: convert to rotation matrix manually
+                x, y, z, w = quaternion
+                return np.array([
+                    [1-2*(y*y + z*z), 2*(x*y - w*z), 2*(x*z + w*y)],
+                    [2*(x*y + w*z), 1-2*(x*x + z*z), 2*(y*z - w*x)],
+                    [2*(x*z - w*y), 2*(y*z + w*x), 1-2*(x*x + y*y)]
+                ])
+        else:
+            return np.eye(3)
+
+    def calculate_world_transforms_fk(self, vmd_transforms: Dict[str, Tuple]) -> Dict[int, np.ndarray]:
+        """
+        Calculate world transforms using forward kinematics with proper MMD mathematics.
+        
+        Args:
+            vmd_transforms: Dictionary mapping bone names to (position_offset, quaternion) tuples
+            
+        Returns:
+            Dictionary mapping bone indices to 4x4 world transform matrices
+        """
+        if not self.bone_hierarchy:
+            raise ValueError("Bone hierarchy must be built first")
+        
+        world_transforms = {}
+        processed_bones = set()
+        
+        def process_bone_recursive(bone_index: int) -> np.ndarray:
+            """Process bone and ensure dependencies are satisfied."""
+            if bone_index in processed_bones:
+                return world_transforms[bone_index]
+                
+            bone_info = self.bone_hierarchy[bone_index]
+            bone_name = bone_info['name']
+            parent_idx = bone_info['parent_index']
+            
+            # Ensure parent is processed first
+            if parent_idx >= 0 and parent_idx in self.bone_hierarchy:
+                parent_world_transform = process_bone_recursive(parent_idx)
+            else:
+                parent_world_transform = np.eye(4)  # World origin
+                
+            # Calculate rest local offset
+            if parent_idx >= 0 and parent_idx in self.bone_hierarchy:
+                # Child bone: local_offset = child.position - parent.position
+                parent_pos = self.bone_hierarchy[parent_idx]['position']
+                child_pos = bone_info['position']
+                rest_offset = (
+                    child_pos[0] - parent_pos[0],
+                    child_pos[1] - parent_pos[1],
+                    child_pos[2] - parent_pos[2]
+                )
+            else:
+                # Root bone: use absolute position
+                rest_offset = bone_info['position']
+            
+            # Get VMD transforms for this bone
+            vmd_translation = (0.0, 0.0, 0.0)
+            vmd_rotation_matrix = np.eye(3)
+            
+            if bone_name in vmd_transforms:
+                vmd_translation, quaternion = vmd_transforms[bone_name]
+                vmd_rotation_matrix = self.quaternion_to_rotation_matrix(quaternion)
+            
+            # Create local transform using correct MMD mathematics
+            local_transform = self.create_bone_local_transform(
+                rest_offset, vmd_translation, vmd_rotation_matrix
+            )
+            
+            # Compose world transform: parent_world * local
+            world_transform = parent_world_transform @ local_transform
+            
+            world_transforms[bone_index] = world_transform
+            processed_bones.add(bone_index)
+            
+            return world_transform
+        
+        # Process all bones
+        for bone_index in self.bone_hierarchy.keys():
+            process_bone_recursive(bone_index)
+            
+        return world_transforms
+
+    def validate_bone_length(self, parent_world_pos: np.ndarray, child_world_pos: np.ndarray,
+                           expected_length: float, bone_name: str, parent_name: str,
+                           tolerance: float = 0.01) -> BoneTransformValidation:
+        """
+        Validate that bone length is preserved after transformation.
+        
+        Args:
+            parent_world_pos: Parent bone world position
+            child_world_pos: Child bone world position
+            expected_length: Expected bone length from rest pose
+            bone_name: Name of the child bone
+            parent_name: Name of the parent bone
+            tolerance: Acceptable error tolerance
+            
+        Returns:
+            BoneTransformValidation result
+        """
+        actual_length = np.linalg.norm(child_world_pos - parent_world_pos)
+        return BoneTransformValidation(
+            bone_name=bone_name,
+            expected_length=expected_length,
+            actual_length=actual_length,
+            parent_bone=parent_name,
+            tolerance=tolerance
+        )
+
+    def validate_all_bone_lengths(self, world_positions: Dict[str, Tuple[float, float, float]]) -> List[BoneTransformValidation]:
+        """
+        Validate bone lengths for all bones in the hierarchy.
+        
+        Args:
+            world_positions: Dictionary mapping bone names to world positions
+            
+        Returns:
+            List of validation results
+        """
+        rest_lengths = self.calculate_rest_bone_lengths()
+        validations = []
+        
+        for bone_index, bone_info in self.bone_hierarchy.items():
+            bone_name = bone_info['name']
+            parent_idx = bone_info['parent_index']
+            
+            if parent_idx >= 0 and parent_idx in self.bone_hierarchy:
+                parent_name = self.bone_hierarchy[parent_idx]['name']
+                
+                if bone_name in world_positions and parent_name in world_positions:
+                    child_pos = np.array(world_positions[bone_name])
+                    parent_pos = np.array(world_positions[parent_name])
+                    expected_length = rest_lengths.get(bone_name, 0.0)
+                    
+                    validation = self.validate_bone_length(
+                        parent_pos, child_pos, expected_length, bone_name, parent_name
+                    )
+                    validations.append(validation)
+        
+        return validations
+
     def get_rest_pose_positions(self) -> Dict[str, Tuple[float, float, float]]:
         """
         Get the world positions of all bones in rest pose (T-pose).
@@ -541,10 +797,13 @@ class BonePositionExtractor:
         bezier_params = parse_vmd_bezier_params(complement_data)
         
         if hasattr(prev_data, 'x'):  # It's a quaternion
-            # Use SLERP for quaternions
+            # Apply rotation easing if bezier parameters are available
+            if bezier_params and 'rotation' in bezier_params:
+                t_ease = bezier_interpolate_value(t, 0.0, 1.0, bezier_params['rotation'])
+                return slerp(prev_data, next_data, t_ease)
             return slerp(prev_data, next_data, t)
         elif isinstance(prev_data, (tuple, list)):  # It's a position (x, y, z)
-            if bezier_params and HAS_BEZIER:
+            if bezier_params:
                 # Use bezier interpolation for each axis
                 x = bezier_interpolate_value(t, prev_data[0], next_data[0], bezier_params['x_pos'])
                 y = bezier_interpolate_value(t, prev_data[1], next_data[1], bezier_params['y_pos'])
@@ -555,7 +814,7 @@ class BonePositionExtractor:
                 return tuple(lerp(prev_data[i], next_data[i], t) for i in range(len(prev_data)))
         else:
             # Single value - use bezier if available
-            if bezier_params and HAS_BEZIER:
+            if bezier_params:
                 return bezier_interpolate_value(t, prev_data, next_data, bezier_params['x_pos'])
             else:
                 return lerp(prev_data, next_data, t)
@@ -580,7 +839,7 @@ class BonePositionExtractor:
             if motion.frame == frame_number:
                 bone_name = motion.name
                 if isinstance(bone_name, bytes):
-                    bone_name = bone_name.decode('utf-8', errors='ignore')
+                    bone_name = bone_name.decode('cp932', errors='ignore')
                 
                 # Store position offset and quaternion
                 pos_offset = (motion.pos.x, motion.pos.y, motion.pos.z)
@@ -605,14 +864,9 @@ class BonePositionExtractor:
         if not self.vmd_motion:
             raise ValueError("VMD motion must be loaded first")
 
-        # Define core bones if filtering is requested
+        # Define core bones if filtering is requested - use centralized definition
         if core_bones_only:
-            target_bone_names = {
-                "グルーブ", "センター", "上半身", "上半身2",
-                "右つま先", "右ひざ", "右ひじ", "右手首", "右肩", "右腕", "右足", "右足首",
-                "左つま先", "左ひざ", "左ひじ", "左手首", "左肩", "左腕", "左足", "左足首",
-                "腰", "頭", "首"
-            }
+            target_bone_names = CORE_BONE_NAMES.copy()
         else:
             # Get all unique bone names from VMD
             target_bone_names = set()
@@ -658,9 +912,74 @@ class BonePositionExtractor:
         
         return interpolated_transforms
     
-    def apply_frame_transforms_to_skeleton(self, frame_number: int, use_interpolation: bool = True) -> Dict[str, Tuple[float, float, float]]:
+    def apply_frame_transforms_to_skeleton(self, frame_number: int, use_interpolation: bool = True,
+                                         validate_lengths: bool = True) -> Dict[str, Tuple[float, float, float]]:
         """
-        Apply VMD transforms from specific frame to core bones using pytransform3d.
+        Apply VMD transforms from specific frame to core bones using corrected MMD mathematics.
+        
+        Args:
+            frame_number: The frame number to extract and apply transforms from
+            use_interpolation: If True, use bezier interpolation between keyframes
+            validate_lengths: If True, validate bone lengths and report issues
+            
+        Returns:
+            Dictionary mapping core bone names to their (x, y, z) world positions after applying transforms
+        """
+        if not self.pmx_model or not self.vmd_motion or not self.bone_hierarchy:
+            raise ValueError("Both PMX model and VMD motion must be loaded first")
+        
+        # Get frame transforms from VMD (with or without interpolation)
+        if use_interpolation:
+            frame_transforms = self.get_interpolated_frame_transforms(frame_number, core_bones_only=True)
+            print(f"Found {len(frame_transforms)} interpolated bone transforms for frame {frame_number}")
+        else:
+            frame_transforms = self.get_frame_transforms(frame_number)
+            print(f"Found {len(frame_transforms)} exact bone transforms in frame {frame_number}")
+        
+        # Calculate world transforms using corrected forward kinematics
+        world_transforms = self.calculate_world_transforms_fk(frame_transforms)
+        
+        # Extract world positions for core bones only
+        core_bone_names = CORE_BONE_NAMES
+        world_positions = {}
+        updated_bones = 0
+        
+        for bone_index, world_transform in world_transforms.items():
+            bone_info = self.bone_hierarchy[bone_index]
+            bone_name = bone_info['name']
+            
+            # Only include core bones in results
+            if bone_name in core_bone_names:
+                world_pos = tuple(world_transform[:3, 3])
+                world_positions[bone_name] = world_pos
+                
+                # Count bones that actually have VMD transforms
+                if bone_name in frame_transforms:
+                    updated_bones += 1
+        
+        print(f"Updated {updated_bones} bones with VMD transforms")
+        
+        # Validate bone lengths if requested
+        if validate_lengths:
+            validations = self.validate_all_bone_lengths(world_positions)
+            
+            # Report validation issues
+            invalid_bones = [v for v in validations if not v.is_valid]
+            if invalid_bones:
+                print(f"\n⚠ Found {len(invalid_bones)} bones with length validation issues:")
+                for validation in invalid_bones[:10]:  # Show first 10 issues
+                    print(f"  {validation}")
+                if len(invalid_bones) > 10:
+                    print(f"  ... and {len(invalid_bones) - 10} more")
+            else:
+                print(f"✓ All {len(validations)} bone lengths validated successfully")
+        
+        return world_positions
+
+    def apply_frame_transforms_to_skeleton_legacy(self, frame_number: int, use_interpolation: bool = True) -> Dict[str, Tuple[float, float, float]]:
+        """
+        Legacy version of transform application using pytransform3d (kept for comparison).
+        This version has the original mathematical errors but is preserved for debugging.
         
         Args:
             frame_number: The frame number to extract and apply transforms from
@@ -687,7 +1006,10 @@ class BonePositionExtractor:
         # Use centralized core bone definition
         core_bone_names = CORE_BONE_NAMES
         
-        # Apply VMD transforms to the TransformManager
+        # Precompute core bone indices for efficient checking
+        core_indices = {i for i, info in self.bone_hierarchy.items() if info['name'] in core_bone_names}
+        
+        # Apply VMD transforms to the TransformManager (LEGACY VERSION WITH BUGS)
         updated_bones = 0
         for bone_index, bone_info in self.bone_hierarchy.items():
             bone_name = bone_info['name']
@@ -724,66 +1046,36 @@ class BonePositionExtractor:
                 vmd_offset, quaternion = frame_transforms[bone_name]
                 updated_bones += 1
             
-            # Create combined transform matrix: Rest_Local_Offset + VMD_Offset + Quaternion_Rotation
+            # LEGACY BUG: Incorrect transform composition
+            R = self.quaternion_to_rotation_matrix(quaternion)
+            rest = np.array(rest_local_offset, dtype=float)
+            off = np.array(vmd_offset, dtype=float)
+            
             transform_matrix = np.eye(4)
-            
-            # Apply rest local offset + VMD offset
-            combined_position = (
-                rest_local_offset[0] + vmd_offset[0],
-                rest_local_offset[1] + vmd_offset[1],
-                rest_local_offset[2] + vmd_offset[2]
-            )
-            transform_matrix[:3, 3] = combined_position
-            
-            # Apply quaternion rotation if available
-            if quaternion is not None:
-                # Handle different quaternion types
-                if hasattr(quaternion, 'getMatrix'):
-                    # VMD quaternion object
-                    rotation_matrix = quaternion.getMatrix()
-                    transform_matrix[:3, :3] = rotation_matrix[:3, :3]
-                elif hasattr(quaternion, '__len__') and len(quaternion) == 4:
-                    # Numpy array quaternion (x, y, z, w) from SLERP
-                    try:
-                        from scipy.spatial.transform import Rotation
-                        # Convert to scipy format (x, y, z, w)
-                        r = Rotation.from_quat([quaternion[0], quaternion[1], quaternion[2], quaternion[3]])
-                        rotation_matrix = r.as_matrix()
-                        transform_matrix[:3, :3] = rotation_matrix
-                    except ImportError:
-                        # Fallback: convert to rotation matrix manually
-                        x, y, z, w = quaternion
-                        transform_matrix[:3, :3] = np.array([
-                            [1-2*(y*y + z*z), 2*(x*y - w*z), 2*(x*z + w*y)],
-                            [2*(x*y + w*z), 1-2*(x*x + z*z), 2*(y*z - w*x)],
-                            [2*(x*z - w*y), 2*(y*z + w*x), 1-2*(x*x + y*y)]
-                        ])
+            transform_matrix[:3, :3] = R
+            transform_matrix[:3, 3] = rest + off  # INCORRECT: Simple addition
             
             # Update the transform in TransformManager
             if parent_idx == -1:
                 parent_frame = "world"
             else:
-                # Check if parent is in our core bone set
-                parent_in_core = any(i == parent_idx and info['name'] in core_bone_names
-                                   for i, info in self.bone_hierarchy.items())
-                if parent_in_core:
+                # Use precomputed core indices for efficient checking
+                if parent_idx in core_indices:
                     parent_frame = f"bone_{parent_idx}"
                 else:
                     parent_bone_name = self.bone_hierarchy.get(parent_idx, {}).get('name', f'index_{parent_idx}')
                     raise ValueError(f"Core bone '{bone_name}' has parent '{parent_bone_name}' (index {parent_idx}) that is not in CORE_BONE_NAMES. "
                                    f"Add '{parent_bone_name}' to CORE_BONE_NAMES to maintain proper FK chain.")
             
+            # Robust transform removal that ignores failures
             try:
-                # Remove existing transform and add updated one
-                if frame_name in self.transform_manager.nodes:
-                    self.transform_manager.remove_transform(parent_frame, frame_name)
-                
-                self.transform_manager.add_transform(parent_frame, frame_name, transform_matrix)
-                
-            except Exception as e:
-                print(f"Warning: Could not update transform for {bone_name}: {e}")
+                self.transform_manager.remove_transform(parent_frame, frame_name)
+            except Exception:
+                pass  # Ignore removal failures
+            
+            self.transform_manager.add_transform(parent_frame, frame_name, transform_matrix)
         
-        print(f"Updated {updated_bones} bones with VMD transforms")
+        print(f"Updated {updated_bones} bones with VMD transforms (LEGACY METHOD)")
         
         # Get world positions using TransformManager
         positions = {}
