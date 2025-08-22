@@ -415,15 +415,26 @@ def get_bone_world_position(pmx_model: pmx.Model, vmd_motion: vmd.Motion,
     for chain_bone_index in bone_chain:
         bone = pmx_model.bones[chain_bone_index]
         
-        # Get bone's rest position
-        rest_pos = bone.position
+        # Calculate local position (relative to parent)
+        # PMX bone positions are world coordinates, need to convert to local
+        if bone.parent_index == -1:
+            # Root bone - local position equals world position
+            local_pos = bone.position
+        else:
+            # Child bone - local position = bone_world_pos - parent_world_pos
+            parent_bone = pmx_model.bones[bone.parent_index]
+            local_pos = common.Vector3(
+                bone.position.x - parent_bone.position.x,
+                bone.position.y - parent_bone.position.y,
+                bone.position.z - parent_bone.position.z
+            )
         
         # Get animation data for this bone at the target frame
         anim_pos, anim_quat = get_bone_animation_data(vmd_motion, bone.name, frame_number)
         
-        # Create translation matrix for rest position
+        # Create translation matrix for local rest position
         rest_translation = np.eye(4, dtype=float)
-        rest_translation[0:3, 3] = [rest_pos.x, rest_pos.y, rest_pos.z]
+        rest_translation[0:3, 3] = [local_pos.x, local_pos.y, local_pos.z]
         
         # Create translation matrix for animation position
         anim_translation = np.eye(4, dtype=float)
@@ -432,8 +443,8 @@ def get_bone_world_position(pmx_model: pmx.Model, vmd_motion: vmd.Motion,
         # Get rotation matrix from quaternion (using existing common.Quaternion)
         rotation_matrix = anim_quat.getMatrix()  # This returns numpy array
         
-        # Combine: Translation * Rotation * Rest_Translation
-        bone_transform = np.dot(np.dot(anim_translation, rotation_matrix), rest_translation)
+        # Correct transformation order: Rest_Translation * Rotation * Anim_Translation
+        bone_transform = np.dot(np.dot(rest_translation, rotation_matrix), anim_translation)
         
         # Accumulate transformation (matrix multiplication order is important!)
         world_transform = np.dot(world_transform, bone_transform)

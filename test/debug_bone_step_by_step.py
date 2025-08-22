@@ -52,12 +52,20 @@ def debug_bone_detailed(pmx_model, vmd_motion, frame, bone_name):
         # Get animation data for this bone
         anim_pos, anim_quat = get_bone_animation_data(vmd_motion, bone.name, frame)
         
-        # Calculate this bone's transformation (same logic as in get_bone_world_position)
-        rest_pos = bone.position
+        # Calculate local position (relative to parent) - same logic as in get_bone_world_position
+        if bone.parent_index == -1:
+            # Root bone - local position equals world position
+            local_pos_x, local_pos_y, local_pos_z = bone.position.x, bone.position.y, bone.position.z
+        else:
+            # Child bone - local position = bone_world_pos - parent_world_pos
+            parent_bone = pmx_model.bones[bone.parent_index]
+            local_pos_x = bone.position.x - parent_bone.position.x
+            local_pos_y = bone.position.y - parent_bone.position.y
+            local_pos_z = bone.position.z - parent_bone.position.z
         
-        # Create translation matrix for rest position
+        # Create translation matrix for local rest position
         rest_translation = np.eye(4, dtype=float)
-        rest_translation[0:3, 3] = [rest_pos.x, rest_pos.y, rest_pos.z]
+        rest_translation[0:3, 3] = [local_pos_x, local_pos_y, local_pos_z]
         
         # Create translation matrix for animation position
         anim_translation = np.eye(4, dtype=float)
@@ -66,8 +74,8 @@ def debug_bone_detailed(pmx_model, vmd_motion, frame, bone_name):
         # Get rotation matrix from quaternion
         rotation_matrix = anim_quat.getMatrix()
         
-        # Combine: Translation * Rotation * Rest_Translation
-        bone_transform = np.dot(np.dot(anim_translation, rotation_matrix), rest_translation)
+        # Correct transformation order: Rest_Translation * Rotation * Anim_Translation
+        bone_transform = np.dot(np.dot(rest_translation, rotation_matrix), anim_translation)
         
         # Accumulate transformation
         world_transform = np.dot(world_transform, bone_transform)
@@ -76,7 +84,8 @@ def debug_bone_detailed(pmx_model, vmd_motion, frame, bone_name):
         current_world_pos = world_transform[0:3, 3]
         
         print(f"  {i}: Index {chain_bone_index} - '{bone.name}' (parent: {bone.parent_index})")
-        print(f"      Rest pos: ({bone.position.x:.3f}, {bone.position.y:.3f}, {bone.position.z:.3f})")
+        print(f"      Rest pos (world): ({bone.position.x:.3f}, {bone.position.y:.3f}, {bone.position.z:.3f})")
+        print(f"      Local pos: ({local_pos_x:.3f}, {local_pos_y:.3f}, {local_pos_z:.3f})")
         print(f"      Anim pos: ({anim_pos.x:.3f}, {anim_pos.y:.3f}, {anim_pos.z:.3f})")
         print(f"      Anim quat: ({anim_quat.x:.3f}, {anim_quat.y:.3f}, {anim_quat.z:.3f}, {anim_quat.w:.3f})")
         print(f"      World pos: ({current_world_pos[0]:.3f}, {current_world_pos[1]:.3f}, {current_world_pos[2]:.3f})")
