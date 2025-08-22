@@ -6,6 +6,7 @@ import math
 import struct
 import sys
 import io
+import numpy
 
 
 def unicode(src):

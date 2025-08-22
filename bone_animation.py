@@ -16,6 +16,7 @@ Key Features:
 """
 
 import math
+import numpy as np
 from typing import Tuple, Optional, Union, List
 import pymeshio
 from pymeshio import common, pmx, vmd
@@ -153,57 +154,18 @@ class VMDInterpolator:
             frame1.pos.z + (frame2.pos.z - frame1.pos.z) * t_z
         )
         
-        # Interpolate rotation using spherical linear interpolation (slerp)
+        # Interpolate rotation using simple linear interpolation (can be improved later)
         t_rot = VMDInterpolator.bezier_interpolate(t, bezier_data['rot'])
-        quat = VMDInterpolator.slerp_quaternion(frame1.q, frame2.q, t_rot)
+        
+        # Simple linear quaternion interpolation using existing common.Quaternion methods
+        quat = common.Quaternion(
+            frame1.q.x + (frame2.q.x - frame1.q.x) * t_rot,
+            frame1.q.y + (frame2.q.y - frame1.q.y) * t_rot,
+            frame1.q.z + (frame2.q.z - frame1.q.z) * t_rot,
+            frame1.q.w + (frame2.q.w - frame1.q.w) * t_rot
+        ).getNormalized()  # Use existing normalization method
         
         return pos, quat
-    
-    @staticmethod
-    def slerp_quaternion(q1: common.Quaternion, q2: common.Quaternion, t: float) -> common.Quaternion:
-        """
-        Spherical linear interpolation between two quaternions.
-        
-        Args:
-            q1: Starting quaternion
-            q2: Ending quaternion
-            t: Interpolation parameter [0.0, 1.0]
-            
-        Returns:
-            common.Quaternion: Interpolated quaternion
-        """
-        # Ensure shortest path
-        dot = q1.dot(q2)
-        if dot < 0:
-            q2 = common.Quaternion(-q2.x, -q2.y, -q2.z, -q2.w)
-            dot = -dot
-        
-        # If quaternions are very similar, use linear interpolation
-        if dot > 0.9995:
-            result = common.Quaternion(
-                q1.x + t * (q2.x - q1.x),
-                q1.y + t * (q2.y - q1.y),
-                q1.z + t * (q2.z - q1.z),
-                q1.w + t * (q2.w - q1.w)
-            )
-            return result.getNormalized()
-        
-        # Spherical interpolation
-        theta_0 = math.acos(abs(dot))
-        sin_theta_0 = math.sin(theta_0)
-        
-        theta = theta_0 * t
-        sin_theta = math.sin(theta)
-        
-        s0 = math.cos(theta) - dot * sin_theta / sin_theta_0
-        s1 = sin_theta / sin_theta_0
-        
-        return common.Quaternion(
-            s0 * q1.x + s1 * q2.x,
-            s0 * q1.y + s1 * q2.y,
-            s0 * q1.z + s1 * q2.z,
-            s0 * q1.w + s1 * q2.w
-        )
 
 
 class BoneHierarchyWalker:
@@ -345,8 +307,15 @@ def get_bone_animation_data(vmd_motion: vmd.Motion, bone_name: Union[str, bytes]
     Returns:
         tuple: (position, quaternion) for the bone at the given frame
     """
+    # Properly handle encoding - VMD files use Shift-JIS encoding
     if isinstance(bone_name, str):
-        bone_name = bone_name.encode('utf-8')
+        try:
+            bone_name = bone_name.encode('shift-jis')
+        except UnicodeEncodeError:
+            try:
+                bone_name = bone_name.encode('utf-8')
+            except UnicodeEncodeError:
+                bone_name = bone_name.encode('utf-8', errors='replace')
     
     # Find all keyframes for this bone
     bone_frames = []
@@ -439,13 +408,8 @@ def get_bone_world_position(pmx_model: pmx.Model, vmd_motion: vmd.Motion,
     # Get bone chain from root to target
     bone_chain = BoneHierarchyWalker.get_bone_chain_to_root(pmx_model.bones, bone_index)
     
-    # Start with identity matrix
-    world_matrix = [
-        [1, 0, 0, 0],
-        [0, 1, 0, 0],
-        [0, 0, 1, 0],
-        [0, 0, 0, 1]
-    ]
+    # Start with identity transformation
+    world_transform = np.eye(4, dtype=float)
     
     # Apply transformations from root to target
     for chain_bone_index in bone_chain:
@@ -457,23 +421,27 @@ def get_bone_world_position(pmx_model: pmx.Model, vmd_motion: vmd.Motion,
         # Get animation data for this bone at the target frame
         anim_pos, anim_quat = get_bone_animation_data(vmd_motion, bone.name, frame_number)
         
-        # Combine rest pose and animation
-        final_pos = common.Vector3(
-            rest_pos.x + anim_pos.x,
-            rest_pos.y + anim_pos.y, 
-            rest_pos.z + anim_pos.z
-        )
+        # Create translation matrix for rest position
+        rest_translation = np.eye(4, dtype=float)
+        rest_translation[0:3, 3] = [rest_pos.x, rest_pos.y, rest_pos.z]
         
-        # Create transformation matrix for this bone
-        bone_matrix = BoneHierarchyWalker.create_transformation_matrix(final_pos, anim_quat)
+        # Create translation matrix for animation position
+        anim_translation = np.eye(4, dtype=float)
+        anim_translation[0:3, 3] = [anim_pos.x, anim_pos.y, anim_pos.z]
         
-        # Accumulate transformation
-        world_matrix = BoneHierarchyWalker.multiply_matrices(world_matrix, bone_matrix)
+        # Get rotation matrix from quaternion (using existing common.Quaternion)
+        rotation_matrix = anim_quat.getMatrix()  # This returns numpy array
+        
+        # Combine: Translation * Rotation * Rest_Translation
+        bone_transform = np.dot(np.dot(anim_translation, rotation_matrix), rest_translation)
+        
+        # Accumulate transformation (matrix multiplication order is important!)
+        world_transform = np.dot(world_transform, bone_transform)
     
     # Extract world position from final transformation matrix
-    world_pos = common.Vector3(world_matrix[0][3], world_matrix[1][3], world_matrix[2][3])
+    world_pos = world_transform[0:3, 3]  # Get translation component
     
-    return world_pos.x, world_pos.y, world_pos.z
+    return float(world_pos[0]), float(world_pos[1]), float(world_pos[2])
 
 
 # Utility functions for common dance analysis tasks
