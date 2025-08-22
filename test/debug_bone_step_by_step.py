@@ -21,6 +21,16 @@ from bone_animation import (
     get_bone_world_position
 )
 
+# Import pytransform3d alternative implementation
+import sys
+import os
+sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+from bone_animation_pytransform3d import (
+    get_bone_world_position_pt3d,
+    get_bone_animation_data_slerp,
+    compare_implementations
+)
+
 def debug_bone_detailed(pmx_model, vmd_motion, frame, bone_name):
     """Debug bone calculation step by step"""
     
@@ -129,6 +139,106 @@ def debug_bone_detailed(pmx_model, vmd_motion, frame, bone_name):
         
         if nearby_frames:
             for f in nearby_frames:
+                print(f"  Frame {f.frame}: pos=({f.pos.x:.3f}, {f.pos.y:.3f}, {f.pos.z:.3f}) rot=({f.q.x:.3f}, {f.q.y:.3f}, {f.q.z:.3f}, {f.q.w:.3f})")
+    
+    # Step 6: Calculate final world position
+    print(f"\n--- World Position Calculation ---")
+    try:
+        world_pos = get_bone_world_position(pmx_model, vmd_motion, frame, bone_name)
+        print(f"Final world position: ({world_pos[0]:.3f}, {world_pos[1]:.3f}, {world_pos[2]:.3f})")
+    except Exception as e:
+        print(f"ERROR calculating world position: {e}")
+
+
+def debug_bone_comparison(pmx_model, vmd_motion, frame, bone_name):
+    """Compare both numpy and pytransform3d implementations side by side"""
+    
+    print(f"\n--- COMPARING IMPLEMENTATIONS FOR '{bone_name}' AT FRAME {frame} ---")
+    
+    # Get comparison results
+    comparison = compare_implementations(pmx_model, vmd_motion, frame, bone_name)
+    
+    # Display results
+    print(f"Bone: {comparison['bone_name']}")
+    print(f"Frame: {comparison['frame_number']}")
+    print()
+    
+    if comparison['numpy_error']:
+        print(f"❌ NumPy implementation failed: {comparison['numpy_error']}")
+    else:
+        numpy_pos = comparison['numpy_result']
+        print(f"✅ NumPy result:        ({numpy_pos[0]:10.6f}, {numpy_pos[1]:10.6f}, {numpy_pos[2]:10.6f})")
+    
+    if comparison['pytransform3d_error']:
+        print(f"❌ Pytransform3d implementation failed: {comparison['pytransform3d_error']}")
+    else:
+        pt3d_pos = comparison['pytransform3d_result']
+        print(f"✅ Pytransform3d result: ({pt3d_pos[0]:10.6f}, {pt3d_pos[1]:10.6f}, {pt3d_pos[2]:10.6f})")
+    
+    # Show comparison if both succeeded
+    if comparison['difference'] is not None:
+        diff = comparison['difference']
+        print(f"📊 Difference:          ({diff[0]:10.6f}, {diff[1]:10.6f}, {diff[2]:10.6f})")
+        print(f"📏 Distance difference:  {comparison['distance_difference']:.10f}")
+        
+        if comparison['tolerance_check']:
+            print("✅ Results match within tolerance (< 1e-6)!")
+        else:
+            print("⚠️  Results differ beyond tolerance!")
+            
+        # Calculate relative error
+        if comparison['numpy_result'] is not None:
+            numpy_magnitude = np.linalg.norm(comparison['numpy_result'])
+            if numpy_magnitude > 1e-10:
+                relative_error = comparison['distance_difference'] / numpy_magnitude
+                print(f"📈 Relative error:       {relative_error:.10f} ({relative_error*100:.8f}%)")
+    
+    print("-" * 80)
+
+
+def test_interpolation_methods(pmx_model, vmd_motion, frame, bone_name):
+    """Test different interpolation methods (linear vs SLERP)"""
+    
+    print(f"\n--- INTERPOLATION COMPARISON FOR '{bone_name}' AT FRAME {frame} ---")
+    
+    # Test original linear interpolation
+    try:
+        anim_pos_linear, anim_quat_linear = get_bone_animation_data(vmd_motion, bone_name, frame)
+        print(f"Linear interpolation:")
+        print(f"  Position:   ({anim_pos_linear.x:.6f}, {anim_pos_linear.y:.6f}, {anim_pos_linear.z:.6f})")
+        print(f"  Quaternion: ({anim_quat_linear.x:.6f}, {anim_quat_linear.y:.6f}, {anim_quat_linear.z:.6f}, {anim_quat_linear.w:.6f})")
+    except Exception as e:
+        print(f"Linear interpolation failed: {e}")
+        return
+    
+    # Test SLERP interpolation
+    try:
+        anim_pos_slerp, anim_quat_slerp = get_bone_animation_data_slerp(vmd_motion, bone_name, frame)
+        print(f"SLERP interpolation:")
+        print(f"  Position:   ({anim_pos_slerp.x:.6f}, {anim_pos_slerp.y:.6f}, {anim_pos_slerp.z:.6f})")
+        print(f"  Quaternion: ({anim_quat_slerp.x:.6f}, {anim_quat_slerp.y:.6f}, {anim_quat_slerp.z:.6f}, {anim_quat_slerp.w:.6f})")
+        
+        # Calculate quaternion difference
+        q_diff = np.array([
+            anim_quat_linear.x - anim_quat_slerp.x,
+            anim_quat_linear.y - anim_quat_slerp.y,
+            anim_quat_linear.z - anim_quat_slerp.z,
+            anim_quat_linear.w - anim_quat_slerp.w
+        ])
+        q_distance = np.linalg.norm(q_diff)
+        print(f"  Quaternion distance: {q_distance:.10f}")
+        
+        if q_distance < 1e-6:
+            print("✅ Quaternion interpolations match closely")
+        else:
+            print("📊 Quaternion interpolations differ - SLERP may be more accurate")
+            
+    except Exception as e:
+        print(f"SLERP interpolation failed: {e}")
+    
+    print("-" * 80)
+
+
                 print(f"  Frame {f.frame}: pos=({f.pos.x:.3f}, {f.pos.y:.3f}, {f.pos.z:.3f}) rot=({f.q.x:.3f}, {f.q.y:.3f}, {f.q.z:.3f}, {f.q.w:.3f})")
     
     # Step 6: Calculate final world position
@@ -271,38 +381,103 @@ def main():
     
     frame = 3000
     
-    # Debug both left and right foot/ankle bones
-    debug_bone_detailed(pmx_model, vmd_motion, frame, '左足首')  # left ankle
-    debug_bone_detailed(pmx_model, vmd_motion, frame, '右足首')  # right ankle
-    debug_bone_detailed(pmx_model, vmd_motion, frame, '左つま先')  # left toe
-    debug_bone_detailed(pmx_model, vmd_motion, frame, '右つま先')  # right toe
+    # Test bones to analyze
+    test_bones = ['左足首', '右足首', '左つま先', '右つま先']  # left ankle, right ankle, left toe, right toe
     
-    print(f"\n=== COMPARISON ===")
-    left_ankle_pos = get_bone_world_position(pmx_model, vmd_motion, frame, '左足首')
-    right_ankle_pos = get_bone_world_position(pmx_model, vmd_motion, frame, '右足首')
-    left_toe_pos = get_bone_world_position(pmx_model, vmd_motion, frame, '左つま先')
-    right_toe_pos = get_bone_world_position(pmx_model, vmd_motion, frame, '右つま先')
+    print(f"\n" + "="*100)
+    print(f"IMPLEMENTATION COMPARISON TEST - FRAME {frame}")
+    print(f"="*100)
     
-    print(f"LEFT_ANKLE:  ({left_ankle_pos[0]:8.3f}, {left_ankle_pos[1]:8.3f}, {left_ankle_pos[2]:8.3f})")
-    print(f"RIGHT_ANKLE: ({right_ankle_pos[0]:8.3f}, {right_ankle_pos[1]:8.3f}, {right_ankle_pos[2]:8.3f})")
-    print(f"LEFT_TOE:    ({left_toe_pos[0]:8.3f}, {left_toe_pos[1]:8.3f}, {left_toe_pos[2]:8.3f})")
-    print(f"RIGHT_TOE:   ({right_toe_pos[0]:8.3f}, {right_toe_pos[1]:8.3f}, {right_toe_pos[2]:8.3f})")
-    
-    ankle_y_diff = abs(left_ankle_pos[1] - right_ankle_pos[1])
-    toe_y_diff = abs(left_toe_pos[1] - right_toe_pos[1])
-    
-    print(f"\nAnkle Y difference: {ankle_y_diff:.6f}")
-    print(f"Toe Y difference: {toe_y_diff:.6f}")
-    
-    if ankle_y_diff < 0.001:
-        print("⚠️  PROBLEM: Identical ankle Y coordinates!")
-    else:
-        print("✅ Ankle Y coordinates are different - good!")
+    # Compare implementations for each bone
+    for bone_name in test_bones:
+        print(f"\n{'='*20} {bone_name} {'='*20}")
         
-    if toe_y_diff < 0.001:
-        print("⚠️  PROBLEM: Identical toe Y coordinates!")
+        # Run detailed debug for numpy implementation
+        debug_bone_detailed(pmx_model, vmd_motion, frame, bone_name)
+        
+        # Compare both implementations
+        debug_bone_comparison(pmx_model, vmd_motion, frame, bone_name)
+        
+        # Test interpolation methods
+        test_interpolation_methods(pmx_model, vmd_motion, frame, bone_name)
+    
+    # Summary comparison
+    print(f"\n" + "="*100)
+    print(f"SUMMARY COMPARISON - FRAME {frame}")
+    print(f"="*100)
+    
+    numpy_positions = {}
+    pt3d_positions = {}
+    
+    for bone_name in test_bones:
+        try:
+            numpy_pos = get_bone_world_position(pmx_model, vmd_motion, frame, bone_name)
+            numpy_positions[bone_name] = numpy_pos
+        except Exception as e:
+            numpy_positions[bone_name] = f"ERROR: {e}"
+            
+        try:
+            pt3d_pos = get_bone_world_position_pt3d(pmx_model, vmd_motion, frame, bone_name)
+            pt3d_positions[bone_name] = pt3d_pos
+        except Exception as e:
+            pt3d_positions[bone_name] = f"ERROR: {e}"
+    
+    print(f"\nNumPy Results:")
+    for bone_name in test_bones:
+        pos = numpy_positions[bone_name]
+        if isinstance(pos, tuple):
+            print(f"  {bone_name:12s}: ({pos[0]:8.3f}, {pos[1]:8.3f}, {pos[2]:8.3f})")
+        else:
+            print(f"  {bone_name:12s}: {pos}")
+    
+    print(f"\nPytransform3d Results:")
+    for bone_name in test_bones:
+        pos = pt3d_positions[bone_name]
+        if isinstance(pos, tuple):
+            print(f"  {bone_name:12s}: ({pos[0]:8.3f}, {pos[1]:8.3f}, {pos[2]:8.3f})")
+        else:
+            print(f"  {bone_name:12s}: {pos}")
+    
+    # Calculate differences
+    print(f"\nDifferences (NumPy - Pytransform3d):")
+    overall_max_diff = 0.0
+    successful_comparisons = 0
+    
+    for bone_name in test_bones:
+        numpy_pos = numpy_positions[bone_name]
+        pt3d_pos = pt3d_positions[bone_name]
+        
+        if isinstance(numpy_pos, tuple) and isinstance(pt3d_pos, tuple):
+            diff = np.array(numpy_pos) - np.array(pt3d_pos)
+            distance = np.linalg.norm(diff)
+            print(f"  {bone_name:12s}: ({diff[0]:8.6f}, {diff[1]:8.6f}, {diff[2]:8.6f}) | Distance: {distance:.8f}")
+            overall_max_diff = max(overall_max_diff, distance)
+            successful_comparisons += 1
+        else:
+            print(f"  {bone_name:12s}: Cannot compare - one implementation failed")
+    
+    # Overall assessment
+    print(f"\n" + "-"*60)
+    print(f"OVERALL ASSESSMENT:")
+    print(f"  Successful comparisons: {successful_comparisons}/{len(test_bones)}")
+    print(f"  Maximum difference: {overall_max_diff:.10f}")
+    
+    if overall_max_diff < 1e-6:
+        print(f"  ✅ All results match within tolerance!")
+    elif overall_max_diff < 1e-3:
+        print(f"  ⚠️  Small differences detected - investigate further")
     else:
-        print("✅ Toe Y coordinates are different - good!")
+        print(f"  ❌ Significant differences - implementation issue likely")
+        
+    # Traditional Y-difference check for validation
+    if isinstance(numpy_positions.get('左足首'), tuple) and isinstance(numpy_positions.get('右足首'), tuple):
+        ankle_y_diff = abs(numpy_positions['左足首'][1] - numpy_positions['右足首'][1])
+        print(f"  Ankle Y difference (validation): {ankle_y_diff:.6f}")
+        
+        if ankle_y_diff < 0.001:
+            print("  ⚠️  PROBLEM: Identical ankle Y coordinates!")
+        else:
+            print("  ✅ Ankle Y coordinates are different - good!")
 
 if __name__ == "__main__":
     main()
