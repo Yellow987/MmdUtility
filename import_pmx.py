@@ -535,7 +535,7 @@ def __create_armature(
                 name = bones[index].name
                 try:
                     pose.bones[name].bone_group = g
-                except KeyError as e:
+                except KeyError:
                     print("pose %s is not found" % name)
 
     bpy.ops.object.mode_set(mode="OBJECT", toggle=False)
