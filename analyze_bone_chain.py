@@ -11,6 +11,7 @@ import os
 from typing import Dict, List, Tuple, Optional, Any
 import quaternion
 import math
+import torch
 
 # Set UTF-8 encoding for stdout on Windows
 if sys.platform == "win32":
@@ -253,6 +254,128 @@ def convert_quaternion_with_matrix(vmd_quat: List[float], conversion_matrix: np.
     return [quat_converted.x, quat_converted.y, quat_converted.z, quat_converted.w]
 
 
+class ForwardKinematics:
+    """PyTorch-based forward kinematics calculator for bone chains."""
+    
+    def __init__(self, device='cpu'):
+        self.device = torch.device(device)
+    
+    def compute_world_positions(self,
+                              bone_offsets: torch.Tensor,
+                              quaternions: torch.Tensor,
+                              parent_indices: List[int],
+                              local_translations: torch.Tensor = None) -> torch.Tensor:
+        """
+        Compute world positions using forward kinematics.
+        
+        Args:
+            bone_offsets: [N, 3] tensor of bone offsets from parent (bind pose)
+            quaternions: [N, 4] tensor of local rotations (x,y,z,w) - normalized
+            parent_indices: List of parent bone indices (-1 for root)
+            local_translations: [N, 3] tensor of per-frame local translations (optional)
+            
+        Returns:
+            world_positions: [N, 3] tensor of world positions
+        """
+        n_bones = bone_offsets.shape[0]
+        world_positions = torch.zeros_like(bone_offsets)
+        world_rotations = quaternions.clone()  # Start with normalized quaternions
+        
+        if local_translations is None:
+            local_translations = torch.zeros_like(bone_offsets)
+        
+        # Get traversal order (parents before children)
+        traversal_order = self._get_traversal_order(parent_indices)
+        
+        for j in traversal_order:
+            p = parent_indices[j]
+            
+            if p == -1:  # Root bone
+                world_positions[j] = local_translations[j]
+                world_rotations[j] = quaternions[j]
+            else:  # Child bone
+                parent_rot = world_rotations[p]
+                world_rotations[j] = self._quaternion_multiply(parent_rot, quaternions[j])
+                step = bone_offsets[j] + local_translations[j]
+                world_positions[j] = world_positions[p] + self._rotate_vector_by_quaternion(step, parent_rot)
+        
+        return world_positions
+    
+    def _get_traversal_order(self, parent_indices: List[int]) -> List[int]:
+        """Get bone traversal order (topological sort - parents before children)."""
+        n_bones = len(parent_indices)
+        visited = [False] * n_bones
+        order = []
+        
+        def visit(bone_idx):
+            if visited[bone_idx]:
+                return
+            
+            parent_idx = parent_indices[bone_idx]
+            if parent_idx != -1:
+                visit(parent_idx)  # Visit parent first
+            
+            visited[bone_idx] = True
+            order.append(bone_idx)
+        
+        for i in range(n_bones):
+            visit(i)
+        
+        return order
+    
+    def _quaternion_multiply(self, q1: torch.Tensor, q2: torch.Tensor) -> torch.Tensor:
+        """Multiply two quaternions: q1 * q2."""
+        x1, y1, z1, w1 = q1[0], q1[1], q1[2], q1[3]
+        x2, y2, z2, w2 = q2[0], q2[1], q2[2], q2[3]
+        
+        result = torch.empty_like(q1)
+        result[0] = w1*x2 + x1*w2 + y1*z2 - z1*y2
+        result[1] = w1*y2 - x1*z2 + y1*w2 + z1*x2
+        result[2] = w1*z2 + x1*y2 - y1*x2 + z1*w2
+        result[3] = w1*w2 - x1*x2 - y1*y2 - z1*z2
+        return result
+    
+    def _rotate_vector_by_quaternion(self, v: torch.Tensor, q: torch.Tensor) -> torch.Tensor:
+        """Rotate vector v by quaternion q using efficient method."""
+        q_vec = q[:3]  # x, y, z components
+        q_w = q[3]     # w component
+        
+        # First cross product: cross(q_vec, v) + q_w * v
+        cross1 = torch.linalg.cross(q_vec, v) + q_w * v
+        
+        # Second cross product: cross(q_vec, cross1)
+        cross2 = torch.linalg.cross(q_vec, cross1)
+        
+        # Final result: v + 2 * cross2
+        return v + 2.0 * cross2
+
+
+def extract_pmx_rest_positions(pmx_model: Any, bone_indices: List[int]) -> Dict[int, np.ndarray]:
+    """
+    Extract rest positions from PMX model for specified bone indices.
+    
+    Args:
+        pmx_model: PMX model object
+        bone_indices: List of bone indices to extract positions for
+        
+    Returns:
+        Dictionary mapping bone_index -> rest_position (as numpy array in MMD coordinates)
+    """
+    rest_positions = {}
+    
+    for bone_idx in bone_indices:
+        if bone_idx < len(pmx_model.bones):
+            pmx_bone = pmx_model.bones[bone_idx]
+            # Keep PMX coordinates in MMD coordinate system for FK calculations
+            rest_pos = [pmx_bone.position.x, pmx_bone.position.y, pmx_bone.position.z]
+            rest_positions[bone_idx] = np.array(rest_pos)
+        else:
+            # Fallback if bone index is out of range
+            rest_positions[bone_idx] = np.array([0.0, 0.0, 0.0])
+    
+    return rest_positions
+
+
 def read_vmd_bone_data(vmd_path: str) -> Dict[str, List[Dict]]:
     """Read VMD file and extract bone animation data"""
     bone_data = {}
@@ -328,21 +451,43 @@ def print_bone_chain_animation(
     parents: np.ndarray = None,
     offsets: np.ndarray = None,
 ):
-    """Print animation data for the entire bone chain at specific frame with conversion matrices"""
+    """Print animation data for the entire bone chain at specific frame with PyTorch FK calculations"""
     print("\n" + "=" * 80)
-    print("BONE CHAIN ANIMATION DATA WITH PER-BONE CONVERSION MATRICES")
+    print("BONE CHAIN ANIMATION DATA WITH PYTORCH FORWARD KINEMATICS")
     print("=" * 80)
 
     # Create bone name mapping
     bone_mapping = create_bone_name_mapping()
     
+    # Initialize PyTorch FK calculator
+    fk_calculator = ForwardKinematics(device='cpu')
+    
+    # Extract PMX rest positions for bones in the chain
+    pmx_rest_positions = {}
+    if pmx_model:
+        # Create PMX bone name to index mapping
+        pmx_bone_map = {bone.name: i for i, bone in enumerate(pmx_model.bones)}
+        
+        # Map skeleton bone indices to PMX bone indices
+        skeleton_to_pmx_map = {}
+        for bone_idx in bone_chain:
+            skeleton_bone_name = names[bone_idx]
+            vmd_bone_name = bone_mapping.get(skeleton_bone_name, skeleton_bone_name)
+            
+            if skeleton_bone_name in pmx_bone_map:
+                pmx_bone_idx = pmx_bone_map[skeleton_bone_name]
+                skeleton_to_pmx_map[bone_idx] = pmx_bone_idx
+            elif vmd_bone_name in pmx_bone_map:
+                pmx_bone_idx = pmx_bone_map[vmd_bone_name]
+                skeleton_to_pmx_map[bone_idx] = pmx_bone_idx
+        
+        # Extract PMX rest positions
+        pmx_rest_positions = extract_pmx_rest_positions(pmx_model, list(skeleton_to_pmx_map.values()))
+    
     # Calculate conversion matrices for all bones in the chain if PMX model is available
     conversion_matrices = {}
     if pmx_model and parents is not None and offsets is not None:
         print("\nCalculating per-bone conversion matrices...")
-        
-        # Create PMX bone name to index mapping
-        pmx_bone_map = {bone.name: i for i, bone in enumerate(pmx_model.bones)}
         
         for bone_idx in bone_chain:
             skeleton_bone_name = names[bone_idx]
@@ -418,6 +563,112 @@ def print_bone_chain_animation(
         print("\n" + "-" * 60)
         print(f"FRAME {frame_num}")
         print("-" * 60)
+        
+        # Create bone index to chain position mapping first
+        bone_idx_to_chain_pos = {bone_idx: pos for pos, bone_idx in enumerate(bone_chain)}
+        
+        # Prepare PyTorch tensors for FK calculations
+        # Calculate proper relative bone offsets from PMX rest positions
+        bone_offsets_mmd = []
+        for i, bone_idx in enumerate(bone_chain):
+            parent_idx = parents[bone_idx]
+            
+            if pmx_model and bone_idx in skeleton_to_pmx_map:
+                pmx_bone_idx = skeleton_to_pmx_map[bone_idx]
+                if pmx_bone_idx in pmx_rest_positions:
+                    current_rest_pos = pmx_rest_positions[pmx_bone_idx]
+                    
+                    # Find parent's rest position
+                    if parent_idx in bone_idx_to_chain_pos and parent_idx in skeleton_to_pmx_map:
+                        parent_pmx_idx = skeleton_to_pmx_map[parent_idx]
+                        if parent_pmx_idx in pmx_rest_positions:
+                            parent_rest_pos = pmx_rest_positions[parent_pmx_idx]
+                            # Calculate relative offset: child_pos - parent_pos
+                            relative_offset = current_rest_pos - parent_rest_pos
+                            bone_offsets_mmd.append(relative_offset)
+                        else:
+                            # Parent not in PMX, use absolute position
+                            bone_offsets_mmd.append(current_rest_pos)
+                    else:
+                        # No parent in chain, use absolute position (for root bones)
+                        bone_offsets_mmd.append(current_rest_pos)
+                else:
+                    # Fallback to skeleton offset converted to MMD coordinates
+                    blender_offset = offsets[bone_idx]
+                    mmd_offset = [-blender_offset[0]*12.5, blender_offset[1]*12.5, -blender_offset[2]*12.5]
+                    bone_offsets_mmd.append(np.array(mmd_offset))
+            else:
+                # Fallback to skeleton offset converted to MMD coordinates
+                blender_offset = offsets[bone_idx]
+                mmd_offset = [-blender_offset[0]*12.5, blender_offset[1]*12.5, -blender_offset[2]*12.5]
+                bone_offsets_mmd.append(np.array(mmd_offset))
+        
+        bone_offsets_tensor = torch.tensor(np.array(bone_offsets_mmd), dtype=torch.float32)
+        
+        # Debug output for bone offsets
+        print(f"\n   Calculated relative bone offsets (MMD):")
+        for i, (bone_idx, offset) in enumerate(zip(bone_chain, bone_offsets_mmd)):
+            bone_name = names[bone_idx]
+            print(f"     {bone_name}: X={offset[0]:.6f}, Y={offset[1]:.6f}, Z={offset[2]:.6f}")
+        
+        # Create parent indices mapping for bone chain (map to chain positions, not full skeleton indices)
+        parent_indices_chain = []
+        for bone_idx in bone_chain:
+            parent_idx = parents[bone_idx]
+            if parent_idx in bone_idx_to_chain_pos:
+                # Parent is in the chain, map to chain position
+                parent_indices_chain.append(bone_idx_to_chain_pos[parent_idx])
+            else:
+                # Parent is not in chain, treat as root
+                parent_indices_chain.append(-1)
+        quaternions_frame = torch.zeros(len(bone_chain), 4, dtype=torch.float32)
+        quaternions_frame[:, 3] = 1.0  # Initialize with identity quaternions (w=1)
+        local_translations_frame = torch.zeros(len(bone_chain), 3, dtype=torch.float32)
+        
+        # Collect quaternions and translations for this frame
+        for chain_pos, bone_idx in enumerate(bone_chain):
+            skeleton_bone_name = names[bone_idx]
+            vmd_bone_name = bone_mapping.get(skeleton_bone_name, skeleton_bone_name)
+            
+            # Find data for this bone at this frame
+            frame_data = None
+            if skeleton_bone_name in bone_data:
+                for data in bone_data[skeleton_bone_name]:
+                    if data["frame"] == frame_num:
+                        frame_data = data
+                        break
+            elif vmd_bone_name in bone_data and vmd_bone_name != skeleton_bone_name:
+                for data in bone_data[vmd_bone_name]:
+                    if data["frame"] == frame_num:
+                        frame_data = data
+                        break
+            
+            if frame_data:
+                # Convert VMD quaternion (x,y,z,w) to tensor
+                quat = frame_data["quaternion"]
+                quaternions_frame[chain_pos] = torch.tensor([quat[0], quat[1], quat[2], quat[3]], dtype=torch.float32)
+                
+                # Keep VMD position in MMD coordinates for FK calculations
+                pos = frame_data["position"]
+                local_translations_frame[chain_pos] = torch.tensor([pos[0], pos[1], pos[2]], dtype=torch.float32)
+        
+        # Normalize quaternions
+        quaternions_frame = quaternions_frame / torch.norm(quaternions_frame, dim=1, keepdim=True)
+        
+        # Calculate world positions using PyTorch FK
+        try:
+            world_positions_tensor = fk_calculator.compute_world_positions(
+                bone_offsets_tensor,
+                quaternions_frame,
+                parent_indices_chain,
+                local_translations_frame
+            )
+            world_positions_np = world_positions_tensor.numpy()
+            fk_success = True
+        except Exception as e:
+            print(f"PyTorch FK calculation failed: {e}")
+            world_positions_np = None
+            fk_success = False
 
         for i, bone_idx in enumerate(bone_chain):
             skeleton_bone_name = names[bone_idx]
@@ -451,6 +702,19 @@ def print_bone_chain_animation(
             print(f"\n{i+1}. {skeleton_bone_name} (index: {bone_idx})")
             if vmd_bone_name != skeleton_bone_name:
                 print(f"   VMD bone name: {vmd_bone_name}")
+            
+            # Display PMX rest position if available (in MMD coordinates)
+            if pmx_model and bone_idx in skeleton_to_pmx_map:
+                pmx_bone_idx = skeleton_to_pmx_map[bone_idx]
+                if pmx_bone_idx in pmx_rest_positions:
+                    rest_pos = pmx_rest_positions[pmx_bone_idx]
+                    print(f"   PMX Rest Position (MMD): X={rest_pos[0]:.6f}, Y={rest_pos[1]:.6f}, Z={rest_pos[2]:.6f}")
+            
+            # Display PyTorch FK calculated world position (in MMD coordinates)
+            if fk_success and world_positions_np is not None:
+                world_pos = world_positions_np[i]
+                print(f"   PyTorch FK World Position (MMD): X={world_pos[0]:.6f}, Y={world_pos[1]:.6f}, Z={world_pos[2]:.6f}")
+            
             if frame_data:
                 pos = frame_data["position"]
                 quat = frame_data["quaternion"]
