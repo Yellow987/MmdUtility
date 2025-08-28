@@ -105,9 +105,8 @@ class BatchAnimatedModel:
                 offset = bone_positions[i]
             bone_offsets.append(offset)
         
-        # Convert to tensor for batch processing (fix performance warning)
-        bone_offsets_np = np.array(bone_offsets, dtype=np.float32)
-        self.bone_offsets = torch.from_numpy(bone_offsets_np).to(device=self.device)
+        # Convert to tensor for batch processing
+        self.bone_offsets = torch.tensor(bone_offsets, dtype=torch.float32, device=self.device)
         print(f"  ✓ Processed bone hierarchy: {n_bones} bones")
     
     def process_vmd_file(self, vmd_path: str, filter_bones: Optional[List[str]] = None) -> Dict[str, Any]:
@@ -254,18 +253,19 @@ class BatchAnimatedModel:
                     if bone_name in self.bone_name_to_index:
                         bone_idx = self.bone_name_to_index[bone_name]
                         
-                        # Set quaternion (x,y,z,w) - optimized tensor creation
+                        # Set quaternion (x,y,z,w)
                         quat = data['quaternion']
-                        quaternions_batch[i, bone_idx, 0] = quat[0]
-                        quaternions_batch[i, bone_idx, 1] = quat[1]
-                        quaternions_batch[i, bone_idx, 2] = quat[2]
-                        quaternions_batch[i, bone_idx, 3] = quat[3]
+                        quaternions_batch[i, bone_idx] = torch.tensor(
+                            [quat[0], quat[1], quat[2], quat[3]],
+                            dtype=torch.float32, device=self.device
+                        )
                         
-                        # Set local translation - optimized tensor creation
+                        # Set local translation
                         pos = data['position']
-                        local_translations_batch[i, bone_idx, 0] = pos[0]
-                        local_translations_batch[i, bone_idx, 1] = pos[1]
-                        local_translations_batch[i, bone_idx, 2] = pos[2]
+                        local_translations_batch[i, bone_idx] = torch.tensor(
+                            [pos[0], pos[1], pos[2]],
+                            dtype=torch.float32, device=self.device
+                        )
         
         # Normalize quaternions
         quaternions_batch = quaternions_batch / torch.norm(quaternions_batch, dim=2, keepdim=True)
