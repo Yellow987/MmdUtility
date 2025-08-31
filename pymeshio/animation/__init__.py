@@ -15,10 +15,12 @@ from .animated_model import AnimatedModel, create_animated_model
 from .forward_kinematics import ForwardKinematics
 from .batch_forward_kinematics import BatchForwardKinematics, create_bone_filter_indices
 from .batch_animated_model import BatchAnimatedModel, create_batch_animated_model
+from .persistent_model import PersistentPmxModel, create_persistent_pmx_model
 
 __all__ = [
     'AnimatedModel', 'create_animated_model',
     'ForwardKinematics',
     'BatchForwardKinematics', 'create_bone_filter_indices',
-    'BatchAnimatedModel', 'create_batch_animated_model'
+    'BatchAnimatedModel', 'create_batch_animated_model',
+    'PersistentPmxModel', 'create_persistent_pmx_model'
 ]

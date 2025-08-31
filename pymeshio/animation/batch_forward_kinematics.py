@@ -68,13 +68,14 @@ class BatchForwardKinematics:
             compute_local_translations = local_translations_batch
         
         n_compute_bones = compute_bone_offsets.shape[0]
-        world_positions_batch = torch.zeros(n_frames, n_compute_bones, 3, 
-                                          dtype=torch.float32, device=self.device)
-        world_rotations_batch = compute_quaternions.clone()
         
         if compute_local_translations is None:
-            compute_local_translations = torch.zeros(n_frames, n_compute_bones, 3, 
+            compute_local_translations = torch.zeros(n_frames, n_compute_bones, 3,
                                                    dtype=torch.float32, device=self.device)
+        
+        # Initialize position and rotation storage - avoid in-place operations
+        world_positions_list = [None] * n_compute_bones
+        world_rotations_list = [None] * n_compute_bones
         
         # Get traversal order (parents before children)
         traversal_order = self._get_traversal_order(compute_parent_indices)
@@ -84,28 +85,39 @@ class BatchForwardKinematics:
             p = compute_parent_indices[j]
             
             if p == -1:  # Root bone
-                world_positions_batch[:, j] = compute_local_translations[:, j]
-                world_rotations_batch[:, j] = compute_quaternions[:, j]
+                world_positions_list[j] = compute_local_translations[:, j].clone()
+                world_rotations_list[j] = compute_quaternions[:, j].clone()
             else:  # Child bone
                 # Batch quaternion multiplication: parent_rot * local_rot
-                parent_rot_batch = world_rotations_batch[:, p]  # [F, 4]
+                parent_rot_batch = world_rotations_list[p]  # [F, 4]
                 local_rot_batch = compute_quaternions[:, j]     # [F, 4]
-                world_rotations_batch[:, j] = self._quaternion_multiply_batch(parent_rot_batch, local_rot_batch)
+                world_rotations_list[j] = self._quaternion_multiply_batch(parent_rot_batch, local_rot_batch)
                 
                 # Batch vector rotation and translation
                 step_batch = compute_bone_offsets[j].unsqueeze(0) + compute_local_translations[:, j]  # [F, 3]
                 rotated_step_batch = self._rotate_vector_by_quaternion_batch(step_batch, parent_rot_batch)
-                world_positions_batch[:, j] = world_positions_batch[:, p] + rotated_step_batch
+                world_positions_list[j] = world_positions_list[p] + rotated_step_batch
+        
+        # Stack results into final tensor
+        world_positions_batch = torch.stack(world_positions_list, dim=1)  # [F, n_compute_bones, 3]
         
         # Filter output to only requested bones
         if bone_filter_indices is not None:
-            # Create output tensor for filtered bones only
-            filtered_positions = torch.zeros(n_frames, len(bone_filter_indices), 3,
-                                           dtype=torch.float32, device=self.device)
-            for out_idx, bone_idx in enumerate(bone_filter_indices):
-                if bone_idx < n_compute_bones:
-                    filtered_positions[:, out_idx] = world_positions_batch[:, bone_idx]
-            return filtered_positions
+            # Use advanced indexing instead of loops to avoid in-place operations
+            filter_tensor = torch.tensor(bone_filter_indices, device=self.device)
+            # Filter bones that exist in our computed range
+            valid_indices = filter_tensor[filter_tensor < n_compute_bones]
+            if len(valid_indices) > 0:
+                filtered_positions = world_positions_batch[:, valid_indices]
+                # Pad with zeros if some requested bones weren't computed
+                if len(valid_indices) < len(bone_filter_indices):
+                    padding_size = len(bone_filter_indices) - len(valid_indices)
+                    padding = torch.zeros(n_frames, padding_size, 3, dtype=torch.float32, device=self.device)
+                    filtered_positions = torch.cat([filtered_positions, padding], dim=1)
+                return filtered_positions
+            else:
+                # All requested bones are out of range, return zeros
+                return torch.zeros(n_frames, len(bone_filter_indices), 3, dtype=torch.float32, device=self.device)
         
         return world_positions_batch
     
@@ -136,11 +148,13 @@ class BatchForwardKinematics:
         x1, y1, z1, w1 = q1_batch[:, 0], q1_batch[:, 1], q1_batch[:, 2], q1_batch[:, 3]
         x2, y2, z2, w2 = q2_batch[:, 0], q2_batch[:, 1], q2_batch[:, 2], q2_batch[:, 3]
         
-        result = torch.empty_like(q1_batch)
-        result[:, 0] = w1*x2 + x1*w2 + y1*z2 - z1*y2
-        result[:, 1] = w1*y2 - x1*z2 + y1*w2 + z1*x2
-        result[:, 2] = w1*z2 + x1*y2 - y1*x2 + z1*w2
-        result[:, 3] = w1*w2 - x1*x2 - y1*y2 - z1*z2
+        # Use torch.stack to avoid in-place operations
+        result = torch.stack([
+            w1*x2 + x1*w2 + y1*z2 - z1*y2,  # x component
+            w1*y2 - x1*z2 + y1*w2 + z1*x2,  # y component
+            w1*z2 + x1*y2 - y1*x2 + z1*w2,  # z component
+            w1*w2 - x1*x2 - y1*y2 - z1*z2   # w component
+        ], dim=1)
         return result
     
     def _rotate_vector_by_quaternion_batch(self, v_batch: torch.Tensor, q_batch: torch.Tensor) -> torch.Tensor:
