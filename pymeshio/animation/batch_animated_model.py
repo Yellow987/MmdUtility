@@ -106,7 +106,7 @@ class BatchAnimatedModel:
             bone_offsets.append(offset)
         
         # Convert to tensor for batch processing
-        self.bone_offsets = torch.tensor(bone_offsets, dtype=torch.float32, device=self.device)
+        self.bone_offsets = torch.tensor(np.array(bone_offsets), dtype=torch.float32, device=self.device)
         print(f"  ✓ Processed bone hierarchy: {n_bones} bones")
     
     def process_vmd_file(self, vmd_path: str, filter_bones: Optional[List[str]] = None) -> Dict[str, Any]:
